@@ -36,6 +36,7 @@ export const CentreLocator: React.FC = () => {
     setPreselectedCategory,
     activeRole,
     setActiveTab,
+    switchRole,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');

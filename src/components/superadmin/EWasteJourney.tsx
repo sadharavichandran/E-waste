@@ -275,7 +275,9 @@ export const EWasteJourney: React.FC = () => {
                       <td className="py-2.5 px-3">
                         <span className="font-mono font-bold text-purple-800 text-[11px]">{req.id}</span>
                         {stalled && (
-                          <AlertTriangle className="inline w-3 h-3 text-amber-500 ml-1" title="No update for 3+ days" />
+                          <span title="No update for 3+ days" className="inline-flex items-center ml-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-500" />
+                          </span>
                         )}
                       </td>
                       <td className="py-2.5 px-3">
