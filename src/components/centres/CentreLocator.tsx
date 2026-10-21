@@ -16,7 +16,6 @@ import {
   Sparkles,
   Info,
   ShieldAlert,
-  Building2,
 } from 'lucide-react';
 import L from 'leaflet';
 
@@ -36,7 +35,6 @@ export const CentreLocator: React.FC = () => {
     preselectedCategory,
     setPreselectedCategory,
     activeRole,
-    switchRole,
     setActiveTab,
   } = useApp();
 
@@ -418,34 +416,14 @@ export const CentreLocator: React.FC = () => {
               );
             })
           ) : (
-            /* Pristine Real-Time Empty State with CTA */
-            <div className="p-8 rounded-3xl bg-white border border-slate-200 text-center space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto shadow-inner">
-                <Building2 className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <h4 className="text-sm font-bold text-slate-900">No Verified E-Waste Centres Yet</h4>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                  Real-time anti-fraud protection active. An <strong>Admin</strong> must register the facility with its EPA license, then the <strong>SuperAdmin</strong> must review and accept it before it appears here.
-                </p>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
-                <button
-                  onClick={() => switchRole('admin')}
-                  className="w-full sm:w-auto px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition cursor-pointer"
-                >
-                  Switch to Admin to Register Centre
-                </button>
-                {pendingCentres.length > 0 && (
-                  <button
-                    onClick={() => switchRole('superadmin')}
-                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition cursor-pointer"
-                  >
-                    Switch to SuperAdmin to Approve ({pendingCentres.length})
-                  </button>
-                )}
-              </div>
+            <div className="p-10 rounded-3xl bg-white border border-slate-200 text-center space-y-2">
+              <MapPin className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-sm font-semibold text-slate-500">No verified centres found</p>
+              <p className="text-xs text-slate-400">
+                {searchQuery || selectedCategory !== 'all' || onlyHazardCertified
+                  ? 'Try adjusting your search filters.'
+                  : 'No approved collection centres are available in your area yet.'}
+              </p>
             </div>
           )}
         </div>

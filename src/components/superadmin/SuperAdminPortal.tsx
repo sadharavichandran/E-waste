@@ -15,7 +15,6 @@ import {
   Mail,
   UserCheck,
   Trash2,
-  RefreshCw,
   Search,
   ExternalLink,
   Flame,
@@ -29,11 +28,9 @@ export const SuperAdminPortal: React.FC = () => {
     approvedCentres,
     reviewCentre,
     deleteCentre,
-    requests,
-    clearAllData,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'pending' | 'all_centres' | 'audit'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'all_centres'>('pending');
   const [rejectingCentreId, setRejectingCentreId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('License number unverified in government database.');
 
@@ -91,23 +88,12 @@ export const SuperAdminPortal: React.FC = () => {
               <Building2 className="w-3.5 h-3.5" />
               All Registered Hubs ({centres.length})
             </button>
-            <button
-              onClick={() => setActiveTab('audit')}
-              className={`px-3.5 py-2 rounded-xl font-bold transition flex items-center gap-2 cursor-pointer ${
-                activeTab === 'audit'
-                  ? 'bg-purple-500 text-slate-950 shadow-md'
-                  : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
-              }`}
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
-              Security & Fraud Shield
-            </button>
           </div>
         </div>
       </div>
 
       {/* KPI Counters */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
             Awaiting Verification
@@ -130,14 +116,6 @@ export const SuperAdminPortal: React.FC = () => {
           </span>
           <div className="text-2xl font-black text-rose-600 mt-1">{rejectedCentres.length}</div>
           <span className="text-[10px] text-slate-500">Unverified centers kept hidden</span>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-            Live Customer Orders
-          </span>
-          <div className="text-2xl font-black text-slate-900 mt-1">{requests.length}</div>
-          <span className="text-[10px] text-slate-500">Protected real-time requests</span>
         </div>
       </div>
 
@@ -376,58 +354,6 @@ export const SuperAdminPortal: React.FC = () => {
         </div>
       )}
 
-      {/* Subtab 3: Security & Fraud Shield Tools */}
-      {activeTab === 'audit' && (
-        <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-xs space-y-6">
-          <div className="pb-3 border-b border-slate-100">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-purple-600" />
-              Citizen Safety & Anti-Fraud Shield
-            </h3>
-            <p className="text-xs text-slate-500">
-              Protection protocols implemented to prevent rogue e-waste dumping and unauthorized scrap collection.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-              <span className="font-bold text-slate-900 block">1. Strict Quarantine Layer</span>
-              <p className="text-slate-600 leading-relaxed text-[11px]">
-                Centres added by Admins are automatically isolated with <code className="font-mono bg-white px-1 border rounded">approvalStatus: 'pending'</code>. Under no circumstances are pending centers queryable by citizen frontends.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-              <span className="font-bold text-slate-900 block">2. EPA License Enforcement</span>
-              <p className="text-slate-600 leading-relaxed text-[11px]">
-                Every center submission requires a registered Environmental Protection Agency license number, logged with the submitting admin's digital identity.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-              <span className="font-bold text-slate-900 block">3. Cryptographic Audit History</span>
-              <p className="text-slate-600 leading-relaxed text-[11px]">
-                All pickup status transitions and center reviews are permanently stamped with timestamp, reviewer ID, and operator notes.
-              </p>
-            </div>
-          </div>
-
-          {/* Database Reset Action */}
-          <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-            <div>
-              <h5 className="font-bold text-slate-900 text-xs">Clear Real-Time Database</h5>
-              <p className="text-[11px] text-slate-500">Purge all local storage state to start completely blank.</p>
-            </div>
-            <button
-              onClick={clearAllData}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-xs font-bold text-slate-700 transition"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
-              Reset Database to Clean State
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
