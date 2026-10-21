@@ -13,23 +13,23 @@ import {
   SYSTEM_PORTAL_ACCOUNTS,
 } from '../data/seedData';
 import {
-  isSupabaseConfigured,
-  getSupabaseConfig,
-} from '../lib/supabaseClient';
-import {
   fetchCentresFromDB,
   upsertCentreInDB,
   deleteCentreFromDB,
+  reviewCentreInDB,
   fetchRequestsFromDB,
   upsertRequestInDB,
+  updateRequestStatusInDB,
   deleteRequestFromDB,
   fetchActivityHistoryFromDB,
   insertActivityInDB,
-  logRequestStatusAudit,
-  syncAllDataToSupabase,
-  subscribeToDatabaseChanges,
-  testSupabaseConnection,
-} from '../lib/supabaseService';
+  importDataToMongoDB,
+  clearDatabaseInMongoDB,
+  subscribeToMongoRealtime,
+  testMongoConnection,
+  apiLogout,
+  apiGetMe,
+} from '../lib/mongoService';
 import confetti from 'canvas-confetti';
 
 export type NavigationTab =
@@ -95,9 +95,10 @@ interface AppContextType {
   deleteCentre: (centreId: string) => Promise<void>;
   deleteRequest: (requestId: string) => Promise<void>;
   clearAllData: () => Promise<void>;
-  // Supabase Database Status & Sync
-  isSupabaseConfigured: boolean;
-  isSupabaseConnected: boolean;
+  // MongoDB Database Status & Sync
+  isSupabaseConfigured: boolean; // Aliased for backward compatibility
+  isSupabaseConnected: boolean; // Aliased for backward compatibility
+  isMongoConnected: boolean;
   isDatabaseLoading: boolean;
   databaseError: string | null;
   syncToSupabase: () => Promise<{ centresCount: number; requestsCount: number; historyCount: number }>;
@@ -113,10 +114,10 @@ interface AppContextType {
   userEcoPoints: number;
 }
 
-const STORAGE_KEY_CENTRES = 'ecoloop_realtime_centres_v4';
-const STORAGE_KEY_REQUESTS = 'ecoloop_realtime_requests_v4';
-const STORAGE_KEY_HISTORY = 'ecoloop_realtime_history_v4';
-const STORAGE_KEY_AUTH = 'ecoloop_realtime_auth_v4';
+const STORAGE_KEY_CENTRES = 'ecoloop_mongo_centres_v1';
+const STORAGE_KEY_REQUESTS = 'ecoloop_mongo_requests_v1';
+const STORAGE_KEY_HISTORY = 'ecoloop_mongo_history_v1';
+const STORAGE_KEY_AUTH = 'ecoloop_mongo_auth_v1';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -161,20 +162,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return 'dashboard';
   });
 
-  // Database Connection States
-  const [hasConfiguredSupabase, setHasConfiguredSupabase] = useState<boolean>(() => isSupabaseConfigured());
-  const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(false);
+  // Database Connection States (MongoDB)
+  const [isMongoConnected, setIsMongoConnected] = useState<boolean>(false);
   const [isDatabaseLoading, setIsDatabaseLoading] = useState<boolean>(false);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
 
-  // Real-time Collections Centres (Strictly real database data only - no fake/mock fallbacks)
-  const [centres, setCentres] = useState<CollectionCentre[]>([]);
+  // Real-time Collections Centres (Strictly real MongoDB database records)
+  const [centres, setCentres] = useState<CollectionCentre[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_CENTRES);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
-  // Real-time Pickup Requests (Strictly real database data only - no fake/mock fallbacks)
-  const [requests, setRequests] = useState<PickupRequest[]>([]);
+  // Real-time Pickup Requests (Strictly real MongoDB database records)
+  const [requests, setRequests] = useState<PickupRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_REQUESTS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
-  // Activity history (Strictly real database data only - no fake/mock fallbacks)
-  const [activityHistory, setActivityHistory] = useState<ActivityHistoryItem[]>([]);
+  // Activity history (Strictly real MongoDB database records)
+  const [activityHistory, setActivityHistory] = useState<ActivityHistoryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_HISTORY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const [trackedRequestId, setTrackedRequestId] = useState<string | null>(null);
   const [preselectedCategory, setPreselectedCategory] = useState<DeviceCategory | null>(null);
@@ -195,7 +216,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [currentUser]);
 
-  // Sync state to local storage as continuous fallback
+  // Sync state to local storage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_CENTRES, JSON.stringify(centres));
@@ -232,28 +253,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Database Loader Function - strictly real records from Supabase
+  // Database Loader Function - strictly real records from MongoDB
   const reloadFromDatabase = useCallback(async () => {
-    if (!isSupabaseConfigured()) {
-      setIsSupabaseConnected(false);
-      setDatabaseError('Supabase is not configured yet.');
-      return;
-    }
-
     setIsDatabaseLoading(true);
     setDatabaseError(null);
     try {
-      const test = await testSupabaseConnection();
-      if (!test.success) {
-        setIsSupabaseConnected(false);
+      const test = await testMongoConnection();
+      setIsMongoConnected(test.isConnected);
+
+      if (!test.isConnected) {
         setDatabaseError(test.error || test.message);
-        setIsDatabaseLoading(false);
-        return;
       }
 
-      setIsSupabaseConnected(true);
-
-      // Fetch all tables concurrently from Supabase
+      // Fetch all collections concurrently from MongoDB
       const [remoteCentres, remoteRequests, remoteHistory] = await Promise.all([
         fetchCentresFromDB().catch((e) => {
           console.warn('Centres fetch error:', e);
@@ -281,70 +293,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActivityHistory(remoteHistory);
       }
     } catch (err: any) {
-      console.error('Database reload failed:', err);
-      setIsSupabaseConnected(false);
-      setDatabaseError(err.message || 'Failed to communicate with Supabase.');
+      console.error('MongoDB database reload failed:', err);
+      setIsMongoConnected(false);
+      setDatabaseError(err.message || 'Failed to communicate with MongoDB backend.');
     } finally {
       setIsDatabaseLoading(false);
     }
   }, []);
 
-  // Sync to Supabase manually
+  // Sync/import to MongoDB manually
   const syncToSupabase = useCallback(async () => {
-    if (!isSupabaseConfigured()) {
-      throw new Error('Supabase is not configured yet. Please configure URL and Key in the modal.');
-    }
     setIsDatabaseLoading(true);
     try {
-      const result = await syncAllDataToSupabase(centres, requests, activityHistory);
-      setIsSupabaseConnected(true);
+      const result = await importDataToMongoDB(centres, requests, activityHistory);
+      setIsMongoConnected(true);
       showToast(
-        `Successfully synced ${result.centresCount} centres and ${result.requestsCount} requests to Supabase!`,
+        `Successfully imported ${result.imported.centresCount} centres and ${result.imported.requestsCount} requests to MongoDB!`,
         'success'
       );
-      return result;
+      await reloadFromDatabase();
+      return result.imported;
     } catch (err: any) {
-      showToast(`Sync failed: ${err.message}`, 'error');
+      showToast(`MongoDB import failed: ${err.message}`, 'error');
       throw err;
     } finally {
       setIsDatabaseLoading(false);
     }
-  }, [centres, requests, activityHistory, showToast]);
+  }, [centres, requests, activityHistory, showToast, reloadFromDatabase]);
 
-  // Initial connection & Real-time setup
-  const isInitialMount = useRef(true);
+  // Initial connection & Real-time WebSocket setup
   useEffect(() => {
-    const configCheck = isSupabaseConfigured();
-    setHasConfiguredSupabase(configCheck);
+    reloadFromDatabase();
 
-    if (configCheck) {
-      reloadFromDatabase();
-    }
+    // Check session on load
+    apiGetMe()
+      .then((res) => {
+        if (res.authenticated && res.user) {
+          setCurrentUser((prev) => ({
+            id: res.user!.id,
+            name: res.user!.name,
+            email: res.user!.email,
+            role: res.user!.role,
+            organization: res.user!.organization,
+            city: res.user!.city,
+            avatarUrl: res.user!.avatarUrl,
+            joinedDate: prev?.joinedDate || new Date().toISOString().split('T')[0],
+          }));
+        }
+      })
+      .catch(() => {});
 
-    // Set up Realtime listener
-    const unsubscribe = subscribeToDatabaseChanges(
+    // Set up MongoDB WebSocket Realtime listener
+    const unsubscribe = subscribeToMongoRealtime(
       () => {
-        // collection_centres changed
+        // Centres collection changed
         fetchCentresFromDB()
-          .then((fresh) => {
-            if (fresh.length > 0) setCentres(fresh);
-          })
+          .then((fresh) => setCentres(fresh))
           .catch(() => {});
       },
       () => {
-        // pickup_requests changed
+        // Pickup requests collection changed
         fetchRequestsFromDB()
-          .then((fresh) => {
-            if (fresh.length > 0) setRequests(fresh);
-          })
+          .then((fresh) => setRequests(fresh))
           .catch(() => {});
       },
       () => {
-        // activity_history changed
+        // Activity history collection changed
         fetchActivityHistoryFromDB()
-          .then((fresh) => {
-            if (fresh.length > 0) setActivityHistory(fresh);
-          })
+          .then((fresh) => setActivityHistory(fresh))
           .catch(() => {});
       }
     );
@@ -352,9 +368,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [reloadFromDatabase]);
 
-  const approvedCentres = centres.filter((c) => c.approvalStatus === 'approved');
+  const approvedCentres = centres.filter((c) => c.approvalStatus === 'approved' && !(c as any).isSuspended);
   const pendingCentres = centres.filter((c) => c.approvalStatus === 'pending');
 
   const userEcoPoints = requests.reduce((acc, req) => {
@@ -400,10 +416,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     navigateTo('/portal');
+    reloadFromDatabase();
   };
 
   // Logout handler
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await apiLogout();
+    } catch {
+      // Ignore
+    }
     setCurrentUser(null);
     localStorage.removeItem(STORAGE_KEY_AUTH);
     navigateTo('/auth/select-role');
@@ -432,7 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Switched active portal to ${role.toUpperCase()}`, 'info');
   };
 
-  // Submit Pickup Request (Stores in Supabase and local state)
+  // Submit Pickup Request (Stores directly in MongoDB)
   const submitPickupRequest = (
     data: Omit<PickupRequest, 'id' | 'status' | 'submittedAt' | 'statusHistory' | 'pointsAwarded' | 'pointsEarned' | 'estimatedCo2SavedKg'>
   ): PickupRequest => {
@@ -462,34 +484,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       estimatedCo2SavedKg: estimatedCo2,
     };
 
-    // Update local state immediately
+    // Optimistic local update
     setRequests((prev) => [newRequest, ...prev]);
     setTrackedRequestId(newId);
 
-    // Save to Supabase DB asynchronously if configured
-    if (isSupabaseConfigured()) {
-      upsertRequestInDB(newRequest)
-        .then(() => {
-          logRequestStatusAudit(
-            newId,
-            'submitted',
-            'Request received and placed into dispatch queue',
-            `${currentUser?.name || data.userName} (Customer)`
-          );
-          showToast(`Pickup request ${newId} saved to Supabase PostgreSQL in real time!`, 'success');
-        })
-        .catch((err: any) => {
-          console.warn('Failed to insert request into Supabase:', err);
-          showToast(`Pickup ${newId} stored locally (Supabase write error: ${err.message || err})`, 'warning');
-        });
-    } else {
-      showToast(`Pickup request ${newId} registered locally!`, 'success');
-    }
+    // Persist to MongoDB asynchronously
+    upsertRequestInDB(newRequest)
+      .then(() => {
+        showToast(`Pickup request ${newId} saved to MongoDB Atlas in real time!`, 'success');
+      })
+      .catch((err: any) => {
+        console.warn('Failed to insert request into MongoDB:', err);
+        showToast(`Pickup request created locally (MongoDB write error: ${err.message})`, 'warning');
+      });
 
     return newRequest;
   };
 
-  // Register Collection Centre (Stores in Supabase and local state)
+  // Register Collection Centre (Stores in MongoDB with approvalStatus = 'pending')
   const registerCentre = (
     data: Omit<CollectionCentre, 'id' | 'approvalStatus' | 'submittedByAdminId' | 'submittedByAdminName' | 'submittedAt'>
   ): CollectionCentre => {
@@ -508,35 +520,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCentres((prev) => [newCentre, ...prev]);
 
-    // Save to Supabase DB asynchronously
-    if (isSupabaseConfigured()) {
-      upsertCentreInDB(newCentre)
-        .then(() => {
-          showToast(`E-Waste Centre "${newCentre.name}" saved to Supabase (Pending SuperAdmin review)!`, 'success');
-        })
-        .catch((err: any) => {
-          console.warn('Failed to insert centre into Supabase:', err);
-          showToast(`Centre stored locally (Supabase write error: ${err.message})`, 'warning');
-        });
-    } else {
-      showToast(`E-Waste Centre "${newCentre.name}" submitted for SuperAdmin verification!`, 'success');
-    }
+    // Persist to MongoDB asynchronously
+    upsertCentreInDB(newCentre)
+      .then(() => {
+        showToast(`E-Waste Centre "${newCentre.name}" saved to MongoDB (Pending SuperAdmin review)!`, 'success');
+      })
+      .catch((err: any) => {
+        console.warn('Failed to insert centre into MongoDB:', err);
+        showToast(`Centre registered locally (MongoDB write error: ${err.message})`, 'warning');
+      });
 
     return newCentre;
   };
 
-  // Update existing Collection Centre (Stores in Supabase and local state)
+  // Update existing Collection Centre
   const updateCentre = async (updated: CollectionCentre): Promise<CollectionCentre> => {
     setCentres((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-    if (isSupabaseConfigured()) {
-      try {
-        await upsertCentreInDB(updated);
-        showToast(`Centre "${updated.name}" updated in Supabase!`, 'success');
-      } catch (err: any) {
-        showToast(`Failed to update centre in Supabase: ${err.message}`, 'error');
-      }
+    try {
+      const saved = await upsertCentreInDB(updated);
+      showToast(`Centre "${updated.name}" updated in MongoDB!`, 'success');
+      return saved;
+    } catch (err: any) {
+      showToast(`Failed to update centre in MongoDB: ${err.message}`, 'error');
+      return updated;
     }
-    return updated;
   };
 
   // Review Centre: SuperAdmin approval/rejection
@@ -578,19 +585,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast(`Centre rejected. Protected citizens from unverified facility.`, 'warning');
     }
 
-    if (updatedCentre && isSupabaseConfigured()) {
-      try {
-        await upsertCentreInDB(updatedCentre);
-      } catch (err) {
-        console.warn('Failed to update centre status in Supabase:', err);
-      }
+    try {
+      await reviewCentreInDB(centreId, decision, notes);
+    } catch (err: any) {
+      console.warn('Failed to persist centre review in MongoDB:', err);
     }
   };
 
   // Update Request Status (Admin / SuperAdmin)
   const updateRequestStatus = async (id: string, newStatus: RequestStatus, note?: string) => {
     let updatedRequest: PickupRequest | null = null;
-    let activityToLog: ActivityHistoryItem | null = null;
 
     setRequests((prev) =>
       prev.map((req) => {
@@ -625,7 +629,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // ignore
           }
 
-          activityToLog = {
+          const activityToLog: ActivityHistoryItem = {
             id: `act-${Date.now()}`,
             requestId: req.id,
             title: `${req.deviceName || req.category} Verified ${newStatus === 'recycled' ? 'Recycled' : 'Collected'}`,
@@ -634,7 +638,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             points: pointsJustEarned,
             type: 'pickup',
           };
-          setActivityHistory((h) => [activityToLog!, ...h]);
+          setActivityHistory((h) => [activityToLog, ...h]);
           showToast(`+${pointsJustEarned} EcoPoints awarded to ${req.userName}!`, 'success');
         }
 
@@ -650,47 +654,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    // Sync to Supabase
-    if (updatedRequest && isSupabaseConfigured()) {
-      try {
-        await upsertRequestInDB(updatedRequest);
-        await logRequestStatusAudit(
-          id,
-          newStatus,
-          note || `Status updated to ${newStatus}`,
-          `${currentUser?.name || 'System Operator'} (${currentUser?.role || 'admin'})`
-        );
-        if (activityToLog) {
-          await insertActivityInDB(activityToLog);
-        }
-      } catch (err) {
-        console.warn('Failed to update request status in Supabase:', err);
-      }
+    // Sync to MongoDB backend
+    try {
+      await updateRequestStatusInDB(id, newStatus, note);
+    } catch (err: any) {
+      console.warn('Failed to update request status in MongoDB:', err);
     }
   };
 
   const deleteCentre = async (centreId: string) => {
     setCentres((prev) => prev.filter((c) => c.id !== centreId));
-    if (isSupabaseConfigured()) {
-      try {
-        await deleteCentreFromDB(centreId);
-      } catch (err) {
-        console.warn('Failed to delete centre from Supabase:', err);
-      }
+    try {
+      await deleteCentreFromDB(centreId);
+      showToast('Collection centre removed from system', 'info');
+    } catch (err: any) {
+      console.warn('Failed to delete centre from MongoDB:', err);
+      showToast(`Centre removed locally (MongoDB error: ${err.message})`, 'warning');
     }
-    showToast('Collection centre removed from system', 'info');
   };
 
   const deleteRequest = async (requestId: string) => {
     setRequests((prev) => prev.filter((r) => r.id !== requestId));
-    if (isSupabaseConfigured()) {
-      try {
-        await deleteRequestFromDB(requestId);
-      } catch (err) {
-        console.warn('Failed to delete request from Supabase:', err);
-      }
+    try {
+      await deleteRequestFromDB(requestId);
+      showToast(`Request ${requestId} deleted`, 'info');
+    } catch (err: any) {
+      console.warn('Failed to delete request from MongoDB:', err);
     }
-    showToast(`Request ${requestId} deleted`, 'info');
   };
 
   const clearAllData = async () => {
@@ -700,7 +690,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem(STORAGE_KEY_CENTRES);
     localStorage.removeItem(STORAGE_KEY_REQUESTS);
     localStorage.removeItem(STORAGE_KEY_HISTORY);
-    showToast('All real-time database tables cleared', 'info');
+    try {
+      await clearDatabaseInMongoDB();
+      showToast('All real-time database collections cleared in MongoDB', 'info');
+    } catch {
+      showToast('Local collections cleared', 'info');
+    }
   };
 
   return (
@@ -734,9 +729,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteCentre,
         deleteRequest,
         clearAllData,
-        // Supabase Status & Sync
-        isSupabaseConfigured: hasConfiguredSupabase,
-        isSupabaseConnected,
+        // MongoDB Status & Sync (Aliased for seamless backward compatibility)
+        isSupabaseConfigured: true,
+        isSupabaseConnected: isMongoConnected,
+        isMongoConnected,
         isDatabaseLoading,
         databaseError,
         syncToSupabase,

@@ -2,31 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Database,
-  Copy,
   Check,
   X,
-  Shield,
   Server,
   RefreshCw,
   Zap,
   CheckCircle2,
   AlertCircle,
-  UploadCloud,
-  ExternalLink,
-  Key,
-  Globe,
   Radio,
+  Layers,
+  ArrowRight,
+  ShieldCheck,
 } from 'lucide-react';
-import { SUPABASE_SQL_SCHEMA } from '../../data/supabaseSchema';
-import {
-  getSupabaseConfig,
-  saveSupabaseCredentials,
-  removeSupabaseCredentials,
-} from '../../lib/supabaseClient';
-import {
-  testSupabaseConnection,
-  ConnectionTestResult,
-} from '../../lib/supabaseService';
+import { testMongoConnection, MongoStatusResult } from '../../lib/mongoService';
 
 export const SupabaseModal: React.FC = () => {
   const {
@@ -35,7 +23,6 @@ export const SupabaseModal: React.FC = () => {
     clearAllData,
     syncToSupabase,
     reloadFromDatabase,
-    isSupabaseConnected,
     isDatabaseLoading,
     showToast,
     centres,
@@ -43,22 +30,13 @@ export const SupabaseModal: React.FC = () => {
     activityHistory,
   } = useApp();
 
-  const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'status' | 'connect' | 'schema' | 'rls'>('status');
-
-  // Input credentials state
-  const initialConfig = getSupabaseConfig();
-  const [inputUrl, setInputUrl] = useState(initialConfig.url || '');
-  const [inputKey, setInputKey] = useState(initialConfig.anonKey || '');
+  const [activeTab, setActiveTab] = useState<'status' | 'migrate' | 'schemas'>('status');
   const [isTesting, setIsTesting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [mongoStatus, setMongoStatus] = useState<MongoStatusResult | null>(null);
 
   useEffect(() => {
     if (isSupabaseModalOpen) {
-      const current = getSupabaseConfig();
-      setInputUrl(current.url);
-      setInputKey(current.anonKey);
       runQuickTest();
     }
   }, [isSupabaseModalOpen]);
@@ -68,452 +46,293 @@ export const SupabaseModal: React.FC = () => {
   const runQuickTest = async () => {
     setIsTesting(true);
     try {
-      const res = await testSupabaseConnection();
-      setTestResult(res);
+      const res = await testMongoConnection();
+      setMongoStatus(res);
     } catch (err: any) {
-      setTestResult({
+      setMongoStatus({
         success: false,
-        latencyMs: 0,
-        message: 'Connection failed',
+        isConnected: false,
+        dbName: 'ecoloop',
+        host: 'unknown',
+        latencyMs: -1,
+        counts: { users: 0, centres: 0, requests: 0, activities: 0 },
         error: err.message,
-        tables: {},
+        message: 'Unable to reach MongoDB API backend',
       });
     } finally {
       setIsTesting(false);
     }
   };
 
-  const handleSaveAndConnect = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputUrl.trim().startsWith('https://')) {
-      showToast('Please enter a valid Supabase URL starting with https://', 'error');
-      return;
-    }
-    if (inputKey.trim().length < 20) {
-      showToast('Please enter a valid Supabase anon key', 'error');
-      return;
-    }
-
-    setIsTesting(true);
+  const handleRunMigration = async () => {
+    setIsMigrating(true);
     try {
-      saveSupabaseCredentials(inputUrl.trim(), inputKey.trim());
-      const test = await testSupabaseConnection();
-      setTestResult(test);
-
-      if (test.success) {
-        showToast('Successfully connected to Supabase Database!', 'success');
-        await reloadFromDatabase();
-      } else {
-        showToast(`Connected to endpoint, but: ${test.message}`, 'warning');
-      }
-    } catch (err: any) {
-      showToast(err.message || 'Failed to save credentials', 'error');
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  const handleDisconnect = () => {
-    removeSupabaseCredentials();
-    setInputUrl('');
-    setInputKey('');
-    setTestResult(null);
-    showToast('Supabase custom credentials cleared. Operating in local sandbox mode.', 'info');
-  };
-
-  const handleSyncToSupabase = async () => {
-    setIsSyncing(true);
-    try {
-      await syncToSupabase();
+      const res = await syncToSupabase();
+      showToast(`Migrated ${res.centresCount} centres, ${res.requestsCount} requests to MongoDB!`, 'success');
       await runQuickTest();
     } catch (err: any) {
-      showToast(`Sync failed: ${err.message}`, 'error');
+      showToast(`Migration error: ${err.message}`, 'error');
     } finally {
-      setIsSyncing(false);
+      setIsMigrating(false);
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleClearCollections = async () => {
+    if (window.confirm('Are you sure you want to clear all MongoDB business collections? This tests empty database behaviour.')) {
+      await clearAllData();
+      await runQuickTest();
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-      <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+        <div className="p-5 sm:p-6 bg-slate-900 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white shadow-sm">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
               <Database className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                Supabase Real-Time Database Center
-                {isSupabaseConnected ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Live Connected
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
-                    <Radio className="w-2.5 h-2.5" />
-                    Setup / Offline
-                  </span>
-                )}
-              </h3>
-              <p className="text-xs text-slate-500">
-                Every pickup request, collection centre, and reward point is stored directly in PostgreSQL.
-              </p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-white">MongoDB Real-Time Engine</h3>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-900 text-emerald-300 border border-emerald-700">
+                  Active
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">Production Mongoose Schemas & WebSocket Broadcast</p>
             </div>
           </div>
           <button
             onClick={() => setIsSupabaseModalOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200/50 transition cursor-pointer"
+            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center px-6 border-b border-slate-200 bg-white gap-2 sm:gap-4 text-xs font-semibold overflow-x-auto">
+        {/* Tab Selector */}
+        <div className="flex items-center gap-2 px-6 pt-4 border-b border-slate-100 bg-slate-50/60">
           <button
             onClick={() => setActiveTab('status')}
-            className={`py-3 border-b-2 transition cursor-pointer whitespace-nowrap ${
+            className={`pb-3 text-xs font-bold transition border-b-2 cursor-pointer ${
               activeTab === 'status'
-                ? 'border-emerald-600 text-emerald-700 font-bold'
+                ? 'border-emerald-600 text-emerald-800'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            Database Status & Sync
+            Database Status & Health
           </button>
           <button
-            onClick={() => setActiveTab('connect')}
-            className={`py-3 border-b-2 transition cursor-pointer whitespace-nowrap ${
-              activeTab === 'connect'
-                ? 'border-emerald-600 text-emerald-700 font-bold'
+            onClick={() => setActiveTab('migrate')}
+            className={`pb-3 text-xs font-bold transition border-b-2 cursor-pointer ${
+              activeTab === 'migrate'
+                ? 'border-emerald-600 text-emerald-800'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            Connect Credentials
+            Data Migration Tool
           </button>
           <button
-            onClick={() => setActiveTab('schema')}
-            className={`py-3 border-b-2 transition cursor-pointer whitespace-nowrap ${
-              activeTab === 'schema'
-                ? 'border-emerald-600 text-emerald-700 font-bold'
+            onClick={() => setActiveTab('schemas')}
+            className={`pb-3 text-xs font-bold transition border-b-2 cursor-pointer ${
+              activeTab === 'schemas'
+                ? 'border-emerald-600 text-emerald-800'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            PostgreSQL Schema (DDL)
-          </button>
-          <button
-            onClick={() => setActiveTab('rls')}
-            className={`py-3 border-b-2 transition cursor-pointer whitespace-nowrap ${
-              activeTab === 'rls'
-                ? 'border-emerald-600 text-emerald-700 font-bold'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Row Level Security (RLS)
+            MongoDB Schemas
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-4 text-slate-700 text-sm flex-1">
-          {/* TAB 1: STATUS & DATA SYNC */}
+        {/* Content Body */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-1 text-slate-800 text-xs">
+          {/* TAB 1: Database Status */}
           {activeTab === 'status' && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               {/* Connection Status Card */}
               <div
-                className={`p-4 rounded-2xl border flex items-start justify-between gap-3 ${
-                  isSupabaseConnected
-                    ? 'border-emerald-200 bg-emerald-50/80 text-emerald-950'
-                    : 'border-amber-200 bg-amber-50/80 text-amber-950'
+                className={`p-4 rounded-2xl border flex items-start gap-3.5 ${
+                  mongoStatus?.isConnected
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50/70 border-amber-200 text-amber-900'
                 }`}
               >
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`p-2 rounded-xl mt-0.5 ${
-                      isSupabaseConnected ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
-                    }`}
-                  >
-                    <Server className="w-5 h-5" />
+                {mongoStatus?.isConnected ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-1 flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm">
+                      {mongoStatus?.isConnected ? 'MongoDB Connected' : 'MongoDB Standby / Connecting'}
+                    </span>
+                    {mongoStatus?.latencyMs !== undefined && mongoStatus.latencyMs >= 0 && (
+                      <span className="text-[10px] font-mono font-bold bg-white px-2 py-0.5 rounded-full border border-emerald-300">
+                        {mongoStatus.latencyMs}ms latency
+                      </span>
+                    )}
                   </div>
-                  <div className="space-y-1">
-                    <h4 className="font-bold text-sm flex items-center gap-2">
-                      {isSupabaseConnected
-                        ? 'Supabase PostgreSQL Storage is ACTIVE'
-                        : 'Supabase Database Not Connected'}
-                      {testResult && testResult.latencyMs > 0 && (
-                        <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-white/80 border border-slate-200 text-slate-700">
-                          {testResult.latencyMs} ms
-                        </span>
-                      )}
-                    </h4>
-                    <p className="text-xs leading-relaxed opacity-90">
-                      {isSupabaseConnected
-                        ? 'Real-time database replication active. Every pickup request and collection centre is stored directly in Supabase PostgreSQL and synced across all user tabs.'
-                        : 'Data is temporarily held in local sandbox. Add your Supabase project credentials in the "Connect Credentials" tab to enable persistent cloud storage.'}
-                    </p>
+                  <p className="text-xs opacity-90 leading-relaxed">
+                    {mongoStatus?.message || 'Database status checking...'}
+                  </p>
+                  <div className="text-[11px] font-mono pt-1 text-slate-600">
+                    Host: <span className="font-bold text-slate-800">{mongoStatus?.host || 'localhost'}</span> | Database:{' '}
+                    <span className="font-bold text-slate-800">{mongoStatus?.dbName || 'ecoloop'}</span>
                   </div>
                 </div>
+              </div>
 
+              {/* Live Record Counts */}
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
+                  MongoDB Document Collections
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Centres</span>
+                    <span className="text-xl font-extrabold text-slate-900">{centres.length}</span>
+                    <span className="text-[10px] text-emerald-700 block font-medium">Real-Time</span>
+                  </div>
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Pickups</span>
+                    <span className="text-xl font-extrabold text-slate-900">{requests.length}</span>
+                    <span className="text-[10px] text-sky-700 block font-medium">Real-Time</span>
+                  </div>
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Activities</span>
+                    <span className="text-xl font-extrabold text-slate-900">{activityHistory.length}</span>
+                    <span className="text-[10px] text-purple-700 block font-medium">Ledger</span>
+                  </div>
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">WebSocket</span>
+                    <span className="text-xl font-extrabold text-emerald-600">Active</span>
+                    <span className="text-[10px] text-slate-500 block font-medium">Live Broadcast</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-3 pt-2">
                 <button
+                  type="button"
                   onClick={runQuickTest}
                   disabled={isTesting}
-                  className="px-3 py-1.5 rounded-xl border bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-xs transition cursor-pointer shrink-0 flex items-center gap-1.5"
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-black transition flex items-center gap-2 cursor-pointer shadow-sm"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
-                  Test Ping
+                  <span>Test MongoDB Connection</span>
                 </button>
-              </div>
-
-              {/* Table Metrics */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-1">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    Pickup Requests
-                  </span>
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-xl font-extrabold text-slate-900">{requests.length}</span>
-                    <span className="text-xs text-emerald-600 font-semibold">
-                      {testResult?.tables['pickup_requests']?.accessible ? '✓ PostgreSQL' : 'Local / Synced'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">Dispatch bookings & items</p>
-                </div>
-
-                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-1">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    Collection Centres
-                  </span>
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-xl font-extrabold text-slate-900">{centres.length}</span>
-                    <span className="text-xs text-emerald-600 font-semibold">
-                      {testResult?.tables['collection_centres']?.accessible ? '✓ PostgreSQL' : 'Local / Synced'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">Verified e-waste hubs</p>
-                </div>
-
-                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-1">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    Activity & Points
-                  </span>
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-xl font-extrabold text-slate-900">{activityHistory.length}</span>
-                    <span className="text-xs text-emerald-600 font-semibold">
-                      {testResult?.tables['activity_history']?.accessible ? '✓ PostgreSQL' : 'Local / Synced'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">Audit logs & EcoPoints</p>
-                </div>
-              </div>
-
-              {/* 1-Click Sync to Supabase */}
-              <div className="p-4 rounded-2xl border border-slate-200 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <h5 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                    <UploadCloud className="w-4 h-4 text-emerald-700" />
-                    Push All Local Data to Supabase Database
-                  </h5>
-                  <p className="text-[11px] text-slate-600">
-                    Upload all initial collection centres, active pickup requests, and activity records into your Supabase database in 1 click.
-                  </p>
-                </div>
                 <button
-                  onClick={handleSyncToSupabase}
-                  disabled={isSyncing || isDatabaseLoading}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+                  type="button"
+                  onClick={reloadFromDatabase}
+                  disabled={isDatabaseLoading}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-100 text-emerald-900 font-bold text-xs hover:bg-emerald-200 transition flex items-center gap-2 cursor-pointer"
                 >
-                  <Zap className={`w-3.5 h-3.5 ${isSyncing ? 'animate-bounce' : ''}`} />
-                  {isSyncing ? 'Pushing to DB...' : 'Sync Data Now'}
+                  <Zap className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Refresh Real-Time Data</span>
                 </button>
-              </div>
-
-              {/* Clear Data Sandbox */}
-              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-                <div>
-                  <h5 className="font-bold text-slate-900 text-xs">Reset Local Sandbox State</h5>
-                  <p className="text-[11px] text-slate-500">Clear cached data to restart from clean default tables.</p>
-                </div>
                 <button
-                  onClick={clearAllData}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-xs font-bold text-slate-700 transition cursor-pointer"
+                  type="button"
+                  onClick={handleClearCollections}
+                  className="px-4 py-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs hover:bg-rose-100 transition cursor-pointer"
                 >
-                  <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
-                  Clear Data
+                  <span>Clear MongoDB Collections (Test Empty States)</span>
                 </button>
               </div>
             </div>
           )}
 
-          {/* TAB 2: CONNECT CREDENTIALS */}
-          {activeTab === 'connect' && (
+          {/* TAB 2: Migration Tool */}
+          {activeTab === 'migrate' && (
             <div className="space-y-4">
-              <div className="p-4 rounded-2xl border border-sky-200 bg-sky-50/70 text-sky-950 text-xs space-y-2">
-                <div className="font-bold flex items-center gap-2 text-sm text-sky-900">
-                  <Globe className="w-4 h-4" />
-                  How to get your Supabase Database Credentials
+              <div className="p-4 bg-sky-50 border border-sky-200 rounded-2xl text-sky-950 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-sm text-sky-900">
+                  <Layers className="w-4 h-4 text-sky-700" />
+                  <span>1-Click Safe Migration: Supabase → MongoDB</span>
                 </div>
-                <ol className="list-decimal list-inside space-y-1 text-sky-800 leading-relaxed">
-                  <li>
-                    Open{' '}
-                    <a
-                      href="https://supabase.com/dashboard"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline font-bold hover:text-sky-950 inline-flex items-center gap-1"
-                    >
-                      Supabase Dashboard <ExternalLink className="w-3 h-3" />
-                    </a>{' '}
-                    and open your project.
-                  </li>
-                  <li>
-                    Go to <strong>Project Settings</strong> (gear icon) &rarr; <strong>API</strong>.
-                  </li>
-                  <li>
-                    Copy your <strong>Project URL</strong> (e.g. <code>https://xyzcompany.supabase.co</code>) and your <strong>Project API key (anon / public)</strong>.
-                  </li>
-                  <li>Paste them below and click <strong>Save & Test Connection</strong>.</li>
-                </ol>
+                <p className="text-xs text-sky-800 leading-relaxed">
+                  Transfer existing Supabase PostgreSQL records into MongoDB without data loss. The script verifies
+                  exact counts and uses atomic upserts based on primary keys.
+                </p>
               </div>
 
-              <form onSubmit={handleSaveAndConnect} className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-slate-500" />
-                    Supabase Project URL (VITE_SUPABASE_URL)
-                  </label>
-                  <input
-                    type="url"
-                    value={inputUrl}
-                    onChange={(e) => setInputUrl(e.target.value)}
-                    placeholder="https://your-project-id.supabase.co"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl text-xs font-mono text-slate-900 transition outline-hidden"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-slate-500" />
-                    Supabase Anon Public API Key (VITE_SUPABASE_ANON_KEY)
-                  </label>
-                  <input
-                    type="password"
-                    value={inputKey}
-                    onChange={(e) => setInputKey(e.target.value)}
-                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl text-xs font-mono text-slate-900 transition outline-hidden"
-                    required
-                  />
-                </div>
-
-                <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="submit"
-                      disabled={isTesting}
-                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm cursor-pointer flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      {isTesting ? 'Testing Connection...' : 'Save & Test Connection'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDisconnect}
-                      className="px-3.5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 text-xs font-semibold transition cursor-pointer"
-                    >
-                      Reset Credentials
-                    </button>
-                  </div>
-
-                  <span className="text-[11px] text-slate-500">
-                    Credentials are saved in your browser & can also be placed in <code>.env</code>
-                  </span>
-                </div>
-              </form>
-
-              {testResult && (
-                <div
-                  className={`p-3.5 rounded-2xl border text-xs space-y-1.5 ${
-                    testResult.success
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
-                      : 'border-rose-200 bg-rose-50 text-rose-950'
-                  }`}
-                >
-                  <div className="font-bold flex items-center gap-2">
-                    {testResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-rose-600" />
-                    )}
-                    {testResult.message}
-                  </div>
-                  {testResult.error && (
-                    <div className="font-mono text-[11px] text-rose-800 bg-white/60 p-2 rounded-lg border border-rose-200">
-                      {testResult.error}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: SCHEMA DDL */}
-          {activeTab === 'schema' && (
-            <div className="space-y-3">
-              <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-950 text-xs flex items-center justify-between">
-                <div>
-                  <span className="font-bold">Step: Run this in Supabase SQL Editor</span>
-                  <p className="text-[11px] text-emerald-800">
-                    Go to Supabase Dashboard &rarr; <strong>SQL Editor</strong> &rarr; Click <strong>New query</strong> &rarr; Paste and click <strong>Run</strong>.
-                  </p>
-                </div>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <h4 className="font-bold text-slate-900">Execute Migration</h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Click the button below to sync all active collection centres, pickup requests, and history records
+                  from the legacy layer directly into your connected MongoDB database.
+                </p>
                 <button
-                  onClick={handleCopy}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm cursor-pointer shrink-0"
+                  type="button"
+                  onClick={handleRunMigration}
+                  disabled={isMigrating}
+                  className="px-5 py-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400 text-white font-bold text-xs shadow-md shadow-emerald-700/20 transition flex items-center gap-2 cursor-pointer"
                 >
-                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  {copied ? 'Copied SQL!' : 'Copy SQL Script'}
+                  {isMigrating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Transferring Records to MongoDB...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Execute Supabase to MongoDB Transfer</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
-              <pre className="p-4 rounded-2xl bg-slate-950 text-emerald-400 text-xs font-mono overflow-x-auto max-h-[380px] leading-relaxed border border-slate-800">
-                {SUPABASE_SQL_SCHEMA}
-              </pre>
+
+              <div className="p-4 bg-slate-900 text-slate-300 rounded-2xl space-y-2 font-mono text-[11px]">
+                <span className="text-slate-400 block font-bold">CLI Migration Alternative:</span>
+                <p className="text-emerald-400">npm run migrate:supabase</p>
+                <p className="text-slate-400 text-[10px]">
+                  Runs scripts/migrate-from-supabase.ts against MONGODB_URI and validates row integrity.
+                </p>
+              </div>
             </div>
           )}
 
-          {/* TAB 4: RLS POLICIES */}
-          {activeTab === 'rls' && (
-            <div className="space-y-3">
-              <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-900 flex items-start gap-2.5">
-                <Shield className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-                <div className="text-xs leading-relaxed">
-                  <strong>Zero-Trust Data Protection:</strong> All tables have Row Level Security enabled. Unapproved collection centres are restricted from non-admin queries, safeguarding citizens from fake collectors, and all submissions are strictly audit-logged.
+          {/* TAB 3: Schemas */}
+          {activeTab === 'schemas' && (
+            <div className="space-y-4">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                  <span>Production MongoDB Mongoose Collections</span>
                 </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  The backend models enforce strict TypeScript definitions, unique constraints, bcrypt password hashes,
+                  and compound indexing for rapid geospatial & status lookups.
+                </p>
               </div>
-              <div className="space-y-2 text-xs">
-                <div className="p-3 rounded-xl border border-slate-200 bg-white">
-                  <div className="font-semibold text-slate-900">1. Collection Centres Table (Realtime Directory)</div>
-                  <div className="text-slate-500 font-mono mt-0.5">
-                    SELECT / INSERT / UPDATE / DELETE enabled for registered centres and verification pipeline.
-                  </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                  <strong className="text-slate-900 block">users</strong>
+                  <span className="text-slate-500 block">
+                    Fields: name, email, password (bcrypt), role, organization, city, isEmailVerified
+                  </span>
                 </div>
-                <div className="p-3 rounded-xl border border-slate-200 bg-white">
-                  <div className="font-semibold text-slate-900">2. Pickup Requests Table (Customer Dispatch)</div>
-                  <div className="text-slate-500 font-mono mt-0.5">
-                    Users can schedule requests, track progress by ECL-ID, and receive real-time status updates.
-                  </div>
+                <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                  <strong className="text-slate-900 block">collectioncentres</strong>
+                  <span className="text-slate-500 block">
+                    Fields: id, name, organization, address, city, lat, lng, approvalStatus ('pending' | 'approved' |
+                    'rejected'), submittedByAdminId
+                  </span>
                 </div>
-                <div className="p-3 rounded-xl border border-slate-200 bg-white">
-                  <div className="font-semibold text-slate-900">3. Audit Log & EcoRewards Table</div>
-                  <div className="text-slate-500 font-mono mt-0.5">
-                    Every status update (submitted &rarr; confirmed &rarr; collected &rarr; recycled) triggers an audit row and EcoPoints credit.
-                  </div>
+                <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                  <strong className="text-slate-900 block">pickuprequests</strong>
+                  <span className="text-slate-500 block">
+                    Fields: id, userId, userName, category, quantity, address, city, preferredDate, status, statusHistory
+                  </span>
+                </div>
+                <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                  <strong className="text-slate-900 block">activityhistories</strong>
+                  <span className="text-slate-500 block">
+                    Fields: id, requestId, title, description, date, points, type ('pickup' | 'dropoff')
+                  </span>
                 </div>
               </div>
             </div>
@@ -521,11 +340,15 @@ export const SupabaseModal: React.FC = () => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-xs">
-          <span className="text-slate-500">EcoLoop Architecture Engine v4.0</span>
+        <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <Radio className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+            <span>MongoDB Atlas / Local • Port 5001 • Real-time Enabled</span>
+          </div>
           <button
+            type="button"
             onClick={() => setIsSupabaseModalOpen(false)}
-            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs transition cursor-pointer"
           >
             Close
           </button>

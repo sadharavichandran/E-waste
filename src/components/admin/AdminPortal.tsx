@@ -44,14 +44,11 @@ import {
   WifiOff,
 } from 'lucide-react';
 import {
-  fetchStatusAuditHistory,
   AuditLogEntry,
-  upsertCentreInDB,
-  upsertRequestInDB,
-  logRequestStatusAudit,
+  fetchStatusAuditHistory,
   subscribeToDatabaseChanges,
   testSupabaseConnection,
-} from '../../lib/supabaseService';
+} from '../../lib/mongoService';
 import {
   ResponsiveContainer,
   BarChart,

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
+import { apiForgotPassword } from '../../lib/mongoService';
 import { X, Mail, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 
 interface ForgotPasswordModalProps {
@@ -32,32 +32,14 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
     setLoading(true);
     setErrorMsg('');
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: window.location.origin,
-        });
-
-        if (error) {
-          setErrorMsg(error.message);
-          setLoading(false);
-          return;
-        }
-
-        setSent(true);
-        setLoading(false);
-        onShowToast('Password reset link sent to your email', 'success');
-      } catch (err: any) {
-        setErrorMsg(err.message || 'Failed to send password reset');
-        setLoading(false);
-      }
-    } else {
-      // Supabase is not configured with production keys
-      setTimeout(() => {
-        setLoading(false);
-        setSent(true);
-        onShowToast('Password recovery instructions sent to ' + email, 'info');
-      }, 500);
+    try {
+      await apiForgotPassword(email.trim());
+      setSent(true);
+      setLoading(false);
+      onShowToast('Password recovery instructions sent to ' + email, 'success');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to dispatch password recovery');
+      setLoading(false);
     }
   };
 

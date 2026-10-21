@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { UserRole } from '../../types';
 import { AuthIllustration } from './AuthIllustration';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
-import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient';
+import { apiLogin, apiRegister } from '../../lib/mongoService';
 import {
   Leaf,
   Mail,
@@ -51,6 +51,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [authError, setAuthError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [verificationSentEmail, setVerificationSentEmail] = useState<string | null>(null);
 
   // Role metadata for headings, subtitles, and badges
   const roleConfig = {
@@ -94,6 +95,53 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   const RoleIcon = roleConfig.icon;
 
+  const formatAuthError = (err: any): string => {
+    if (!err) return 'An unexpected error occurred. Please try again.';
+
+    const message = typeof err === 'string' ? err : err.message || '';
+    const code = (err.code || '').toLowerCase();
+    const status = err.status || 0;
+    const lowerMsg = message.toLowerCase();
+
+    // Requirement 3: When the email rate limit is exceeded, display:
+    // "Too many registration or verification attempts. Please wait before trying again."
+    if (
+      status === 429 ||
+      code === 'over_email_send_rate_limit' ||
+      lowerMsg.includes('rate limit') ||
+      lowerMsg.includes('over_email_send_rate_limit') ||
+      lowerMsg.includes('too many')
+    ) {
+      return 'Too many registration or verification attempts. Please wait before trying again.';
+    }
+
+    // Existing user account
+    if (
+      code === 'user_already_exists' ||
+      lowerMsg.includes('already registered') ||
+      lowerMsg.includes('already exists')
+    ) {
+      return 'An account with this email address already exists. Please sign in instead.';
+    }
+
+    // Invalid login credentials
+    if (lowerMsg.includes('invalid') && (lowerMsg.includes('credentials') || lowerMsg.includes('password') || lowerMsg.includes('email'))) {
+      return 'Invalid email or password. Please verify your credentials and try again.';
+    }
+
+    // Password requirements
+    if (lowerMsg.includes('password') && (lowerMsg.includes('weak') || lowerMsg.includes('least') || lowerMsg.includes('characters'))) {
+      return 'Password must be at least 6 characters long.';
+    }
+
+    // Network error
+    if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('networkerror') || lowerMsg.includes('econnrefused')) {
+      return 'Unable to reach the authentication service. Please verify server connection.';
+    }
+
+    return message || 'Unable to complete request. Please try again.';
+  };
+
   const validate = () => {
     const errors: Record<string, string> = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -130,90 +178,62 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     e.preventDefault();
     setAuthError(null);
 
+    // Prevent repeated submission while already loading
+    if (loading) return;
+
     if (!validate()) return;
 
     setLoading(true);
 
-    // 1. Supabase Auth if environment variables are configured
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
+    try {
+      const response = await apiLogin({
+        email: email.trim(),
+        password,
+        requiredRole: role,
+      });
 
-        if (error) {
-          setAuthError(error.message);
-          setLoading(false);
-          return;
-        }
-
-        // Check user role from Supabase user_metadata or user_profiles table
-        const assignedRole = data.user.user_metadata?.role || 'user';
-
-        // Role authorization check: protect portals from role mismatch
-        if (role === 'superadmin' && assignedRole !== 'superadmin') {
-          setAuthError('Access Denied: Your account does not possess SuperAdmin regulatory clearance.');
-          setLoading(false);
-          return;
-        }
-
-        if (role === 'admin' && assignedRole !== 'admin' && assignedRole !== 'superadmin') {
-          setAuthError('Access Denied: Your account is not registered as a certified facility administrator.');
-          setLoading(false);
-          return;
-        }
-
+      if (response && response.user) {
         onLoginSuccess({
-          id: data.user.id,
-          name: data.user.user_metadata?.full_name || email.split('@')[0],
-          email: data.user.email || email,
-          role,
-          organization: data.user.user_metadata?.organization || roleConfig.orgName,
+          id: response.user.id,
+          name: response.user.name,
+          email: response.user.email,
+          role: response.user.role,
+          organization: response.user.organization || roleConfig.orgName,
         });
 
         onShowToast(`Signed in to ${roleConfig.title}`, 'success');
-        setLoading(false);
-        return;
-      } catch (err: any) {
-        setAuthError(err.message || 'Authentication failed. Please verify your credentials.');
-        setLoading(false);
-        return;
-      }
-    }
-
-    // 2. Real-time Client Authentication Sandbox
-    setTimeout(() => {
-      // Check if user is signing in with default test credentials or custom credentials
-      if (email.trim().toLowerCase() === roleConfig.defaultEmail.toLowerCase() && password === 'ecoloop2026') {
-        onLoginSuccess({
-          id: `${role}-${Date.now()}`,
-          name: roleConfig.defaultName,
-          email: roleConfig.defaultEmail,
-          role,
-          organization: roleConfig.orgName,
-        });
-        onShowToast(`Signed in as ${roleConfig.defaultName} (${role.toUpperCase()})`, 'success');
-      } else if (password.length >= 6) {
-        // Authenticate user with their entered email
-        onLoginSuccess({
-          id: `usr-${Date.now()}`,
-          name: fullName.trim() || email.split('@')[0].replace(/[._]/g, ' '),
-          email: email.trim(),
-          role,
-          organization: role === 'admin' ? (facilityName.trim() || 'E-Waste Recovery Facility') : roleConfig.orgName,
-        });
-        onShowToast(`Signed in to ${roleConfig.title}`, 'success');
-      } else {
-        setAuthError('Invalid credentials. Password must be at least 6 characters.');
       }
       setLoading(false);
-    }, 600);
+      return;
+    } catch (err: any) {
+      // Local development test account fallback if backend server is still connecting
+      if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        if (email.trim().toLowerCase() === roleConfig.defaultEmail.toLowerCase() && password === 'ecoloop2026') {
+          onLoginSuccess({
+            id: `${role}-${Date.now()}`,
+            name: roleConfig.defaultName,
+            email: roleConfig.defaultEmail,
+            role,
+            organization: roleConfig.orgName,
+          });
+          onShowToast(`Signed in as ${roleConfig.defaultName} (${role.toUpperCase()})`, 'success');
+          setLoading(false);
+          return;
+        }
+      }
+
+      setAuthError(formatAuthError(err));
+      setLoading(false);
+      return;
+    }
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
+
+    // Prevent repeated submissions while a signup request is in progress
+    if (loading) return;
 
     if (role === 'superadmin') {
       setAuthError('Public SuperAdmin registration is strictly prohibited by platform security policies.');
@@ -224,58 +244,39 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
     setLoading(true);
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: {
-              full_name: fullName.trim(),
-              role,
-              organization: role === 'admin' ? facilityName.trim() : 'Community Resident',
-              city: city.trim(),
-            },
-          },
-        });
+    try {
+      const response = await apiRegister({
+        fullName: fullName.trim(),
+        email: email.trim(),
+        password,
+        role,
+        facilityName: role === 'admin' ? facilityName.trim() : undefined,
+        city: city.trim(),
+      });
 
-        if (error) {
-          setAuthError(error.message);
-          setLoading(false);
-          return;
-        }
-
-        if (data.user) {
+      if (response && response.user) {
+        if (role === 'admin') {
+          // Centre Admin registration submitted: show verification pending confirmation
+          setVerificationSentEmail(email.trim());
+          onShowToast('Facility application recorded! Pending SuperAdmin regulatory review.', 'success');
+        } else {
           onLoginSuccess({
-            id: data.user.id,
-            name: fullName.trim(),
-            email: email.trim(),
-            role,
-            organization: role === 'admin' ? facilityName.trim() : 'Community Resident',
+            id: response.user.id,
+            name: response.user.name,
+            email: response.user.email,
+            role: response.user.role,
+            organization: response.user.organization || 'Community Resident',
           });
           onShowToast('Account created successfully! Welcome to EcoLoop.', 'success');
         }
-        setLoading(false);
-        return;
-      } catch (err: any) {
-        setAuthError(err.message || 'Registration failed. Please try again.');
-        setLoading(false);
-        return;
       }
-    }
-
-    // Client registration
-    setTimeout(() => {
-      onLoginSuccess({
-        id: `reg-${Date.now()}`,
-        name: fullName.trim(),
-        email: email.trim(),
-        role,
-        organization: role === 'admin' ? facilityName.trim() : 'Citizen Member',
-      });
-      onShowToast(`Account registered successfully for ${fullName.trim()}!`, 'success');
       setLoading(false);
-    }, 700);
+      return;
+    } catch (err: any) {
+      setAuthError(formatAuthError(err));
+      setLoading(false);
+      return;
+    }
   };
 
   const handleAutoFillTest = () => {
@@ -588,155 +589,209 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
             {/* SIGN UP FORM (Citizens and Centre Admins) */}
             {mode === 'signup' && role !== 'superadmin' && (
-              <form onSubmit={handleSignUp} className="space-y-3.5" noValidate>
-                {/* Full Name */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700">
-                    {role === 'admin' ? 'Authorized Representative Name' : 'Full Name'} <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={fullName}
-                      onChange={(e) => {
-                        setFullName(e.target.value);
-                        if (fieldErrors.fullName) setFieldErrors((prev) => ({ ...prev, fullName: '' }));
-                      }}
-                      placeholder={role === 'admin' ? 'e.g. Marcus Sterling' : 'e.g. Jordan Lee'}
-                      className={`w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border rounded-2xl text-xs sm:text-sm outline-hidden transition ${
-                        fieldErrors.fullName ? 'border-rose-400 bg-rose-50/50' : 'border-slate-200 focus:bg-white focus:border-emerald-600'
-                      }`}
-                    />
+              verificationSentEmail ? (
+                <div className="p-6 rounded-3xl bg-emerald-50/80 border border-emerald-200/90 text-center space-y-4 animate-in fade-in">
+                  <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-700 shadow-sm">
+                    <Mail className="w-7 h-7" />
                   </div>
-                  {fieldErrors.fullName && (
-                    <p className="text-[11px] text-rose-600 font-medium pl-1">{fieldErrors.fullName}</p>
-                  )}
-                </div>
+                  <div className="space-y-1.5">
+                    <h3 className="text-base font-bold text-slate-900">Registration Submitted</h3>
+                    <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
+                      We have recorded your registration for <strong className="text-emerald-950 font-semibold">{verificationSentEmail}</strong>.
+                    </p>
+                  </div>
 
-                {/* Facility Name (Admin Only) */}
-                {role === 'admin' && (
+                  {role === 'admin' && (
+                    <div className="p-3.5 bg-white/90 rounded-2xl border border-emerald-200 text-left text-xs text-slate-700 space-y-1.5 shadow-xs">
+                      <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                        <Building2 className="w-4 h-4" />
+                        <span>Facility Registered in MongoDB (Pending Review)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        Your collection centre application has been safely saved in MongoDB with status <span className="font-bold text-amber-700">"Pending SuperAdmin Verification"</span>.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('signin');
+                        setVerificationSentEmail(null);
+                        setAuthError(null);
+                      }}
+                      className="w-full py-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>Proceed to Sign In</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVerificationSentEmail(null)}
+                      className="text-xs text-slate-500 hover:text-slate-800 font-medium underline underline-offset-2 py-1 cursor-pointer"
+                    >
+                      Edit Application Details
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleSignUp} className="space-y-3.5" noValidate>
+                  {/* Full Name */}
                   <div className="space-y-1">
                     <label className="block text-xs font-bold text-slate-700">
-                      Facility / Organization Name <span className="text-rose-500">*</span>
+                      {role === 'admin' ? 'Authorized Representative Name' : 'Full Name'} <span className="text-rose-500">*</span>
                     </label>
                     <div className="relative">
-                      <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
                         type="text"
-                        value={facilityName}
+                        disabled={loading}
+                        value={fullName}
                         onChange={(e) => {
-                          setFacilityName(e.target.value);
-                          if (fieldErrors.facilityName) setFieldErrors((prev) => ({ ...prev, facilityName: '' }));
+                          setFullName(e.target.value);
+                          if (fieldErrors.fullName) setFieldErrors((prev) => ({ ...prev, fullName: '' }));
                         }}
-                        placeholder="e.g. EcoLoop Bay Area Recovery Center"
+                        placeholder={role === 'admin' ? 'e.g. Marcus Sterling' : 'e.g. Jordan Lee'}
                         className={`w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border rounded-2xl text-xs sm:text-sm outline-hidden transition ${
-                          fieldErrors.facilityName ? 'border-rose-400 bg-rose-50/50' : 'border-slate-200 focus:bg-white focus:border-emerald-600'
+                          fieldErrors.fullName ? 'border-rose-400 bg-rose-50/50' : 'border-slate-200 focus:bg-white focus:border-emerald-600'
                         }`}
                       />
                     </div>
-                    {fieldErrors.facilityName && (
-                      <p className="text-[11px] text-rose-600 font-medium pl-1">{fieldErrors.facilityName}</p>
+                    {fieldErrors.fullName && (
+                      <p className="text-[11px] text-rose-600 font-medium pl-1">{fieldErrors.fullName}</p>
                     )}
                   </div>
-                )}
 
-                {/* Email Field */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700">
-                    Email Address <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: '' }));
-                      }}
-                      placeholder="you@domain.com"
-                      className={`w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border rounded-2xl text-xs sm:text-sm outline-hidden transition ${
-                        fieldErrors.email ? 'border-rose-400 bg-rose-50/50' : 'border-slate-200 focus:bg-white focus:border-emerald-600'
-                      }`}
-                    />
-                  </div>
-                  {fieldErrors.email && (
-                    <p className="text-[11px] text-rose-600 font-medium pl-1">{fieldErrors.email}</p>
+                  {/* Facility Name (Admin Only) */}
+                  {role === 'admin' && (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Facility / Organization Name <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          disabled={loading}
+                          value={facilityName}
+                          onChange={(e) => {
+                            setFacilityName(e.target.value);
+                            if (fieldErrors.facilityName) setFieldErrors((prev) => ({ ...prev, facilityName: '' }));
+                          }}
+                          placeholder="e.g. EcoLoop Bay Area Recovery Center"
+                          className={`w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border rounded-2xl text-xs sm:text-sm outline-hidden transition ${
+                            fieldErrors.facilityName ? 'border-rose-400 bg-rose-50/50' : 'border-slate-200 focus:bg-white focus:border-emerald-600'
+                          }`}
+                        />
+                      </div>
+                      {fieldErrors.facilityName && (
+                        <p className="text-[11px] text-rose-600 font-medium pl-1">{fieldErrors.facilityName}</p>
+                      )}
+                    </div>
                   )}
-                </div>
 
-                {/* Password Fields in Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Email Field */}
                   <div className="space-y-1">
                     <label className="block text-xs font-bold text-slate-700">
-                      Password <span className="text-rose-500">*</span>
+                      Email Address <span className="text-rose-500">*</span>
                     </label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Min 6 characters"
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm outline-hidden focus:bg-white focus:border-emerald-600"
-                    />
-                    {fieldErrors.password && (
-                      <p className="text-[10px] text-rose-600 font-medium">{fieldErrors.password}</p>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="email"
+                        disabled={loading}
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: '' }));
+                        }}
+                        placeholder="you@domain.com"
+                        className={`w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border rounded-2xl text-xs sm:text-sm outline-hidden transition ${
+                          fieldErrors.email ? 'border-rose-400 bg-rose-50/50' : 'border-slate-200 focus:bg-white focus:border-emerald-600'
+                        }`}
+                      />
+                    </div>
+                    {fieldErrors.email && (
+                      <p className="text-[11px] text-rose-600 font-medium pl-1">{fieldErrors.email}</p>
                     )}
                   </div>
 
+                  {/* Password Fields in Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Password <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        disabled={loading}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Min 6 characters"
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm outline-hidden focus:bg-white focus:border-emerald-600"
+                      />
+                      {fieldErrors.password && (
+                        <p className="text-[10px] text-rose-600 font-medium">{fieldErrors.password}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Confirm <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        disabled={loading}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Confirm password"
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm outline-hidden focus:bg-white focus:border-emerald-600"
+                      />
+                      {fieldErrors.confirmPassword && (
+                        <p className="text-[10px] text-rose-600 font-medium">{fieldErrors.confirmPassword}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* City */}
                   <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-700">
-                      Confirm <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm password"
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm outline-hidden focus:bg-white focus:border-emerald-600"
-                    />
-                    {fieldErrors.confirmPassword && (
-                      <p className="text-[10px] text-rose-600 font-medium">{fieldErrors.confirmPassword}</p>
-                    )}
+                    <label className="block text-xs font-bold text-slate-700">City / Region</label>
+                    <div className="relative">
+                      <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        disabled={loading}
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        placeholder="e.g. San Francisco, CA"
+                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm outline-hidden focus:bg-white focus:border-emerald-600"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {/* City */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700">City / Region</label>
-                  <div className="relative">
-                    <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      placeholder="e.g. San Francisco, CA"
-                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm outline-hidden focus:bg-white focus:border-emerald-600"
-                    />
+                  {/* Submit Signup Button */}
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400 disabled:cursor-not-allowed text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-all flex items-center justify-center gap-2 cursor-pointer transform active:scale-98"
+                    >
+                      {loading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Submitting Registration...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>{role === 'admin' ? 'Submit Facility Registration' : 'Create EcoLoop Account'}</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
                   </div>
-                </div>
-
-                {/* Submit Signup Button */}
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-all flex items-center justify-center gap-2 cursor-pointer transform active:scale-98"
-                  >
-                    {loading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Creating Account...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>{role === 'admin' ? 'Submit Facility Registration' : 'Create EcoLoop Account'}</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
+                </form>
+              )
             )}
 
             {/* Signup / Sign In Toggle Link */}
