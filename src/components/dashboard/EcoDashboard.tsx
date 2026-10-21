@@ -9,9 +9,7 @@ import {
   Clock,
   ShieldCheck,
   TrendingUp,
-  Building2,
   CheckCircle2,
-  KeyRound,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -43,13 +41,9 @@ export const EcoDashboard: React.FC = () => {
   const {
     requests,
     approvedCentres,
-    pendingCentres,
     setActiveTab,
     setTrackedRequestId,
     updateRequestStatus,
-    activeRole,
-    switchRole,
-    setIsAuthModalOpen,
   } = useApp();
 
   // Metrics calculated strictly from real-time requests
@@ -170,34 +164,6 @@ export const EcoDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Role Notice & Portal Switcher Strip */}
-      <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
-            <KeyRound className="w-4 h-4" />
-          </div>
-          <div className="text-xs">
-            <span className="font-bold text-slate-900 block">
-              Active Session: <span className="text-emerald-700 capitalize">{activeRole} Portal</span>
-            </span>
-            <span className="text-slate-500">
-              {activeRole === 'user'
-                ? 'Citizens can schedule pickups, track requests, and browse verified centers.'
-                : activeRole === 'admin'
-                ? 'Admins can add new e-waste centers with location & dispatch pickups.'
-                : 'SuperAdmins audit and approve centers to protect users from fake actors.'}
-            </span>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setIsAuthModalOpen(true)}
-          className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
-        >
-          <span>Switch Portal</span>
-          <ArrowUpRight className="w-3.5 h-3.5" />
-        </button>
-      </div>
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -258,10 +224,10 @@ export const EcoDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Analytics Row: Real Category Breakdown & Verification Status */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Category Breakdown (7 cols) */}
-        <div className="lg:col-span-7 p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4">
+      {/* Analytics Row: Category Breakdown (full width) */}
+      <div className="grid grid-cols-1 gap-6">
+        {/* Category Breakdown */}
+        <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-bold text-slate-900">Equipment Composition Breakdown</h3>
@@ -326,45 +292,6 @@ export const EcoDashboard: React.FC = () => {
               </button>
             </div>
           )}
-        </div>
-
-        {/* E-Waste Centre Verification Network Status (5 cols) */}
-        <div className="lg:col-span-5 p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4">
-          <div className="pb-3 border-b border-slate-100">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-emerald-600" />
-              Circular Hubs Network Status
-            </h3>
-            <p className="text-xs text-slate-500">Live regulatory safety overview</p>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-emerald-950 block">Verified & Approved Centres</span>
-                <span className="text-[11px] text-emerald-800">Publicly active on citizen locator map</span>
-              </div>
-              <span className="text-xl font-black text-emerald-800">{approvedCentres.length}</span>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-amber-950 block">Under SuperAdmin Audit</span>
-                <span className="text-[11px] text-amber-800">Pending license verification</span>
-              </div>
-              <span className="text-xl font-black text-amber-800">{pendingCentres.length}</span>
-            </div>
-          </div>
-
-          <div className="pt-2">
-            <button
-              onClick={() => setActiveTab('collection_centres')}
-              className="w-full py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              <span>Explore Verified Drop-off Centres</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
         </div>
       </div>
 

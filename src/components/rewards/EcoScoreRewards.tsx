@@ -1,64 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Award,
-  Sparkles,
-  TreePine,
-  ShieldCheck,
   CheckCircle2,
-  Lock,
-  Cpu,
-  GraduationCap,
-  Crown,
   Clock,
-  Gift,
   Layers,
   Recycle,
   Truck,
-  ArrowRight,
 } from 'lucide-react';
-import { ECO_BADGES } from '../../data/seedData';
-import confetti from 'canvas-confetti';
 
-interface RedeemOption {
-  id: string;
-  title: string;
-  cost: number;
-  provider: string;
-  description: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
 
-const REDEEM_OPTIONS: RedeemOption[] = [
-  {
-    id: 'rdm-tree',
-    title: 'Plant a Verified Native Tree',
-    cost: 100,
-    provider: 'OneTreePlanted Partner',
-    description: 'Sponsor an indigenous tree planted in deforested watersheds with geo-coordinates certificate.',
-    icon: TreePine,
-  },
-  {
-    id: 'rdm-voucher',
-    title: '$15 Green Tech Repair Credit',
-    cost: 150,
-    provider: 'iFixit & Right-to-Repair Network',
-    description: 'Redeemable for certified replacement batteries, repair toolkits, and screen parts.',
-    icon: Gift,
-  },
-  {
-    id: 'rdm-campus',
-    title: 'Eco Dining Voucher',
-    cost: 80,
-    provider: 'Sustainable Dining Network',
-    description: 'Free organic meal or fair-trade beverage credit across participating campus cafes.',
-    icon: GraduationCap,
-  },
-];
+
 
 export const EcoScoreRewards: React.FC = () => {
-  const { currentUser, activityHistory, showToast, requests, userEcoPoints, setActiveTab } = useApp();
-  const [redeemedIds, setRedeemedIds] = useState<string[]>([]);
+  const { currentUser, activityHistory, requests, userEcoPoints } = useApp();
 
   // Calculate live counts from real-time customer requests
   const totalSubmitted = requests.reduce((sum, r) => sum + (r.quantity || 1), 0);
@@ -89,42 +44,7 @@ export const EcoScoreRewards: React.FC = () => {
     ? Math.min(100, Math.round((pointsIntoTier / tierRange) * 100))
     : 100;
 
-  const handleRedeem = (item: RedeemOption) => {
-    if (userEcoPoints < item.cost) {
-      showToast(`Insufficient EcoPoints. You have ${userEcoPoints} pts (need ${item.cost} pts).`, 'warning');
-      return;
-    }
 
-    try {
-      confetti({
-        particleCount: 60,
-        spread: 50,
-        origin: { y: 0.7 },
-      });
-    } catch (e) {
-      // ignore
-    }
-
-    setRedeemedIds((prev) => [...prev, item.id]);
-    showToast(`Successfully redeemed "${item.title}"! Voucher dispatched to ${currentUser?.email || 'your registered email'}.`, 'success');
-  };
-
-  const getBadgeIcon = (iconName: string) => {
-    switch (iconName) {
-      case 'Sparkles':
-        return <Sparkles className="w-5 h-5 text-amber-500" />;
-      case 'ShieldCheck':
-        return <ShieldCheck className="w-5 h-5 text-emerald-600" />;
-      case 'Cpu':
-        return <Cpu className="w-5 h-5 text-indigo-600" />;
-      case 'Award':
-        return <Award className="w-5 h-5 text-teal-600" />;
-      case 'Crown':
-        return <Crown className="w-5 h-5 text-amber-500" />;
-      default:
-        return <Award className="w-5 h-5 text-emerald-600" />;
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -222,110 +142,7 @@ export const EcoScoreRewards: React.FC = () => {
         </div>
       </div>
 
-      {/* Achievement Badges Grid */}
-      <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900">Achievement Badges</h3>
-            <p className="text-xs text-slate-500">Unlocked automatically as your EcoPoints balance increases</p>
-          </div>
-          <span className="text-[10px] font-semibold text-slate-400">
-            {ECO_BADGES.filter((b) => userEcoPoints >= b.requiredPoints).length} of {ECO_BADGES.length} Unlocked
-          </span>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {ECO_BADGES.map((badge) => {
-            const isUnlocked = userEcoPoints >= badge.requiredPoints;
-            return (
-              <div
-                key={badge.id}
-                className={`p-4 rounded-2xl border transition-all ${
-                  isUnlocked
-                    ? 'border-emerald-200 bg-emerald-50/40 shadow-2xs'
-                    : 'border-slate-200 bg-slate-50/50 opacity-60'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-2xs">
-                    {isUnlocked ? getBadgeIcon(badge.icon) : <Lock className="w-4 h-4 text-slate-400" />}
-                  </div>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      isUnlocked
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {isUnlocked ? 'Unlocked' : `${badge.requiredPoints} pts`}
-                  </span>
-                </div>
-
-                <div className="mt-3">
-                  <h4 className="text-xs font-bold text-slate-900">{badge.title}</h4>
-                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{badge.description}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Rewards Redemption Grid */}
-      <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Gift className="w-4 h-4 text-emerald-600" />
-              Redeem EcoPoints
-            </h3>
-            <p className="text-xs text-slate-500">Exchange real earned points for sustainability impact</p>
-          </div>
-          <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md">
-            {userEcoPoints} Available Pts
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {REDEEM_OPTIONS.map((item) => {
-            const Icon = item.icon;
-            const isRedeemed = redeemedIds.includes(item.id);
-            const canAfford = userEcoPoints >= item.cost;
-
-            return (
-              <div
-                key={item.id}
-                className="p-4 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 transition flex flex-col justify-between gap-4"
-              >
-                <div className="space-y-2">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-900">{item.title}</h4>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">{item.description}</p>
-                </div>
-
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-xs font-extrabold text-emerald-700">{item.cost} pts</span>
-                  <button
-                    onClick={() => handleRedeem(item)}
-                    disabled={isRedeemed || !canAfford}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                      isRedeemed
-                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                        : canAfford
-                        ? 'bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                    }`}
-                  >
-                    {isRedeemed ? 'Claimed ✓' : canAfford ? 'Redeem' : 'Need More Pts'}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
 
       {/* Activity History Log */}
       <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4">
