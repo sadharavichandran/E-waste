@@ -1,0 +1,6 @@
+{
+  "name": "EcoLoop - Smart E-Waste Circular Economy Platform",
+  "description": "EcoLoop helps households, students, and institutions responsibly dispose of electronic waste with smart triage, pickup booking, collection centre discovery, and sustainability rewards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
