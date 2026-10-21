@@ -61,7 +61,7 @@ const AccessDeniedCard: React.FC<AccessDeniedCardProps> = ({ requiredRole, title
 };
 
 const MainContent: React.FC = () => {
-  const { activeTab, currentUser } = useApp();
+  const { activeTab, currentUser, setActiveTab } = useApp();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -97,30 +97,82 @@ const MainContent: React.FC = () => {
 
         {/* Viewport Content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          {/* User Citizen Portal Views */}
-          {activeTab === 'dashboard' && <EcoDashboard />}
-          {activeTab === 'decision_engine' && <DecisionEngine />}
-          {activeTab === 'schedule_pickup' && <PickupBooking />}
-          {activeTab === 'track_request' && <RequestTracker />}
-          {activeTab === 'collection_centres' && <CentreLocator />}
-          {activeTab === 'ecoscore_rewards' && <EcoScoreRewards />}
+          {/* Citizen / User Portal Views */}
+          {userRole === 'user' && (
+            <>
+              {activeTab === 'dashboard' && <EcoDashboard />}
+              {activeTab === 'decision_engine' && <DecisionEngine />}
+              {activeTab === 'schedule_pickup' && <PickupBooking />}
+              {activeTab === 'track_request' && <RequestTracker />}
+              {activeTab === 'collection_centres' && <CentreLocator />}
+              {activeTab === 'ecoscore_rewards' && <EcoScoreRewards />}
 
-          {/* Facility Admin Portal Views with RBAC Protection */}
-          {(activeTab === 'admin_centres' || activeTab === 'admin_pickups') && (
-            userRole === 'user' ? (
-              <AccessDeniedCard requiredRole="admin" title="Facility Administrator Clearance" />
-            ) : (
-              <AdminPortal />
-            )
+              {activeTab.startsWith('admin_') && (
+                <AccessDeniedCard requiredRole="admin" title="Facility Administrator Clearance" />
+              )}
+              {activeTab.startsWith('superadmin_') && (
+                <AccessDeniedCard requiredRole="superadmin" title="SuperAdmin Regulatory Clearance" />
+              )}
+            </>
+          )}
+
+          {/* Facility Centre Admin Portal Views with Strict RBAC */}
+          {userRole === 'admin' && (
+            <>
+              {activeTab.startsWith('admin_') && <AdminPortal />}
+
+              {/* Prevent Centre Admin from accessing user-only public map and smart guide */}
+              {(activeTab === 'collection_centres' || activeTab === 'decision_engine') && (
+                <div className="py-12 flex items-center justify-center">
+                  <div className="max-w-md w-full bg-white rounded-3xl border border-sky-200/80 p-8 shadow-xl text-center space-y-4">
+                    <div className="w-14 h-14 mx-auto rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center border border-sky-100 shadow-inner">
+                      <ShieldAlert className="w-7 h-7" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-sky-700 bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200">
+                        Citizen Portal Feature
+                      </span>
+                      <h3 className="text-xl font-black text-slate-900">User-Facing Feature</h3>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        The public Collection Map and Smart E-Waste Guide are reserved for citizens in the User Portal. As a Centre Administrator, you manage your facility location directly in <strong>My Centre</strong>.
+                      </p>
+                    </div>
+                    <div className="pt-2 flex flex-col gap-2">
+                      <button
+                        onClick={() => setActiveTab('admin_my_centre')}
+                        className="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                      >
+                        <span>Open My Centre Desk</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Fallback to AdminPortal if on any other citizen tab */}
+              {(activeTab === 'dashboard' || activeTab === 'schedule_pickup' || activeTab === 'track_request' || activeTab === 'ecoscore_rewards') && (
+                <AdminPortal />
+              )}
+
+              {activeTab.startsWith('superadmin_') && (
+                <AccessDeniedCard requiredRole="superadmin" title="SuperAdmin Regulatory Clearance" />
+              )}
+            </>
           )}
 
           {/* SuperAdmin Anti-Fraud & Regulatory Portal Views with Strict RBAC */}
-          {(activeTab === 'superadmin_approvals' || activeTab === 'superadmin_audit') && (
-            userRole !== 'superadmin' ? (
-              <AccessDeniedCard requiredRole="superadmin" title="SuperAdmin Regulatory Clearance" />
-            ) : (
-              <SuperAdminPortal />
-            )
+          {userRole === 'superadmin' && (
+            <>
+              {(activeTab === 'superadmin_approvals' || activeTab === 'superadmin_audit') && <SuperAdminPortal />}
+              {activeTab === 'admin_pickups' && <AdminPortal />}
+              {activeTab === 'collection_centres' && <CentreLocator />}
+              {activeTab === 'decision_engine' && <DecisionEngine />}
+              {activeTab.startsWith('admin_') && activeTab !== 'admin_pickups' && <AdminPortal />}
+              {(activeTab === 'dashboard' || activeTab === 'schedule_pickup' || activeTab === 'track_request' || activeTab === 'ecoscore_rewards') && (
+                <SuperAdminPortal />
+              )}
+            </>
           )}
         </main>
 

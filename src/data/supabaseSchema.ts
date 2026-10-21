@@ -1,160 +1,207 @@
 /**
  * Production-ready Supabase PostgreSQL Schema & Security Blueprint
  * This schema supports the complete EcoLoop Circular Economy platform:
- * - pickup_requests
- * - collection_centres
- * - request_status_history
- * - user_profiles
- * - eco_rewards
- * Includes Row Level Security (RLS) policies, indexes, and automated point awarding triggers.
+ * - pickup_requests (all e-waste pickup submissions)
+ * - collection_centres (e-waste recycling hubs & verification status)
+ * - request_status_history (detailed tracking audit log)
+ * - activity_history (EcoPoints ledger & reward events)
+ * - user_profiles (multi-portal accounts)
+ * 
+ * Includes Row Level Security (RLS) policies, indexes, and Realtime publication.
  */
 
 export const SUPABASE_SQL_SCHEMA = `-- ===============================================================
--- EcoLoop: PostgreSQL Database Schema for Supabase
--- Target Engine: PostgreSQL 15+ / Supabase Auth & Storage
+-- EcoLoop: Complete PostgreSQL Database Schema for Supabase
+-- Target Engine: PostgreSQL 14+ / Supabase
 -- ===============================================================
 
 -- 1. Enable Required Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- 2. User Profiles Table (Synced with Supabase auth.users)
-CREATE TABLE IF NOT EXISTS public.user_profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email TEXT NOT NULL UNIQUE,
-    full_name TEXT NOT NULL,
-    user_type TEXT NOT NULL DEFAULT 'household' CHECK (user_type IN ('household', 'student', 'institution')),
-    institution_name TEXT,
-    phone TEXT,
-    avatar_url TEXT,
-    eco_points INTEGER NOT NULL DEFAULT 0 CHECK (eco_points >= 0),
-    tier TEXT NOT NULL DEFAULT 'Eco Novice' CHECK (tier IN ('Eco Novice', 'Green Guardian', 'Circular Champion', 'Emerald Ambassador')),
-    total_devices_submitted INTEGER NOT NULL DEFAULT 0,
-    total_devices_collected INTEGER NOT NULL DEFAULT 0,
-    total_devices_recycled INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
-);
-
--- 3. Collection Centres Table (Geo-spatial & partner directory)
+-- ===============================================================
+-- 2. Collection Centres Table (Recycling hubs & Geo directory)
+-- ===============================================================
 CREATE TABLE IF NOT EXISTS public.collection_centres (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     organization TEXT NOT NULL,
     address TEXT NOT NULL,
     city TEXT NOT NULL,
     pincode VARCHAR(20) NOT NULL,
-    latitude DOUBLE PRECISION NOT NULL,
-    longitude DOUBLE PRECISION NOT NULL,
+    lat DOUBLE PRECISION NOT NULL,
+    lng DOUBLE PRECISION NOT NULL,
     phone TEXT,
     email TEXT,
-    operating_hours TEXT NOT NULL,
+    operating_hours TEXT NOT NULL DEFAULT '9:00 AM - 6:00 PM',
     accepted_categories TEXT[] NOT NULL DEFAULT '{}',
     is_certified_r2 BOOLEAN NOT NULL DEFAULT false,
     is_hazardous_battery_certified BOOLEAN NOT NULL DEFAULT false,
-    centre_type TEXT NOT NULL CHECK (centre_type IN ('Drop-off Kiosk', 'Certified Recycler', 'Brand Take-Back', 'Municipal Hub')),
-    rating NUMERIC(3,2) DEFAULT 4.5,
-    is_verified_partner BOOLEAN NOT NULL DEFAULT true,
+    centre_type TEXT NOT NULL DEFAULT 'Certified Recycler',
+    license_number TEXT DEFAULT '',
+    approval_status TEXT NOT NULL DEFAULT 'pending' CHECK (approval_status IN ('pending', 'approved', 'rejected')),
+    submitted_by_admin_id TEXT,
+    submitted_by_admin_name TEXT,
+    submitted_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
+    reviewed_by_super_admin_id TEXT,
+    reviewed_at TIMESTAMPTZ,
+    verification_notes TEXT,
+    rating NUMERIC(3,2) DEFAULT 4.8,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
 
--- 4. Pickup Requests Table
+-- ===============================================================
+-- 3. Pickup Requests Table (All customer e-waste bookings)
+-- ===============================================================
 CREATE TABLE IF NOT EXISTS public.pickup_requests (
-    id VARCHAR(30) PRIMARY KEY, -- Formatted: ECL-YYYY-XXXX
-    user_id UUID REFERENCES public.user_profiles(id) ON DELETE SET NULL,
+    id TEXT PRIMARY KEY, -- Formatted: ECL-YYYY-XXXX
+    user_id TEXT,
     user_name TEXT NOT NULL,
     contact_number TEXT NOT NULL,
     email TEXT NOT NULL,
-    device_category TEXT NOT NULL CHECK (
-        device_category IN ('mobile', 'laptop', 'tablet', 'desktop', 'charger_cable', 'battery', 'audio_wearable', 'home_appliance', 'other')
-    ),
+    category TEXT NOT NULL,
     device_name TEXT,
     quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-    device_condition TEXT NOT NULL CHECK (device_condition IN ('working', 'repairable', 'non_working')),
+    condition TEXT NOT NULL DEFAULT 'working',
     address TEXT NOT NULL,
     city TEXT NOT NULL,
     pincode VARCHAR(20) NOT NULL,
     preferred_date DATE NOT NULL,
-    preferred_time_slot TEXT NOT NULL CHECK (preferred_time_slot IN ('morning', 'afternoon', 'evening')),
+    preferred_time_slot TEXT NOT NULL DEFAULT 'morning',
     additional_instructions TEXT,
     has_battery_hazard BOOLEAN NOT NULL DEFAULT false,
     status TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted', 'confirmed', 'collected', 'recycled', 'cancelled')),
     points_awarded BOOLEAN NOT NULL DEFAULT false,
     points_earned INTEGER NOT NULL DEFAULT 0,
     estimated_co2_saved_kg NUMERIC(8,2) NOT NULL DEFAULT 0.00,
+    status_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+    submitted_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
 
--- 5. Request Status History Table (Audit log for tracking)
+-- ===============================================================
+-- 4. Request Status History Audit Table
+-- ===============================================================
 CREATE TABLE IF NOT EXISTS public.request_status_history (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    request_id VARCHAR(30) NOT NULL REFERENCES public.pickup_requests(id) ON DELETE CASCADE,
-    previous_status TEXT,
-    new_status TEXT NOT NULL,
-    note TEXT NOT NULL,
-    updated_by UUID REFERENCES auth.users(id),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    request_id TEXT NOT NULL REFERENCES public.pickup_requests(id) ON DELETE CASCADE,
+    status TEXT NOT NULL,
+    note TEXT,
+    updated_by TEXT,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+-- ===============================================================
+-- 5. Activity History & EcoPoints Ledger
+-- ===============================================================
+CREATE TABLE IF NOT EXISTS public.activity_history (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    request_id TEXT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    date TEXT NOT NULL,
+    points INTEGER NOT NULL DEFAULT 0,
+    type TEXT NOT NULL DEFAULT 'pickup',
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
 
--- 6. Eco Rewards & Badges Table
-CREATE TABLE IF NOT EXISTS public.eco_rewards (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES public.user_profiles(id) ON DELETE CASCADE,
-    request_id VARCHAR(30) REFERENCES public.pickup_requests(id),
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    points INTEGER NOT NULL CHECK (points != 0),
-    reward_type TEXT NOT NULL CHECK (reward_type IN ('pickup', 'dropoff', 'badge_unlock', 'redemption')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
-    -- Prevent duplicate reward claims for the same completed event
-    CONSTRAINT unique_request_reward UNIQUE (user_id, request_id, reward_type)
+-- ===============================================================
+-- 6. User Profiles Table
+-- ===============================================================
+CREATE TABLE IF NOT EXISTS public.user_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user',
+    organization TEXT,
+    avatar_url TEXT,
+    joined_date TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
 
 -- ===============================================================
--- 7. Indexes for Query Performance
+-- 7. High-Performance Indexes
 -- ===============================================================
-CREATE INDEX IF NOT EXISTS idx_pickup_user_id ON public.pickup_requests(user_id);
-CREATE INDEX IF NOT EXISTS idx_pickup_status ON public.pickup_requests(status);
-CREATE INDEX IF NOT EXISTS idx_pickup_city_pincode ON public.pickup_requests(city, pincode);
-CREATE INDEX IF NOT EXISTS idx_status_history_request ON public.request_status_history(request_id);
-CREATE INDEX IF NOT EXISTS idx_centres_city_pincode ON public.collection_centres(city, pincode);
-CREATE INDEX IF NOT EXISTS idx_rewards_user ON public.eco_rewards(user_id);
+CREATE INDEX IF NOT EXISTS idx_centres_approval ON public.collection_centres(approval_status);
+CREATE INDEX IF NOT EXISTS idx_centres_city ON public.collection_centres(city);
+CREATE INDEX IF NOT EXISTS idx_requests_status ON public.pickup_requests(status);
+CREATE INDEX IF NOT EXISTS idx_requests_email ON public.pickup_requests(email);
+CREATE INDEX IF NOT EXISTS idx_requests_user ON public.pickup_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_status_history_req ON public.request_status_history(request_id);
+CREATE INDEX IF NOT EXISTS idx_activity_created ON public.activity_history(created_at);
 
 -- ===============================================================
 -- 8. Row Level Security (RLS) Configuration
 -- ===============================================================
-ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.collection_centres ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pickup_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.request_status_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.collection_centres ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.eco_rewards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.activity_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 
--- Collection Centres: Public read access for all users
-CREATE POLICY "Collection centres are publicly visible"
-    ON public.collection_centres FOR SELECT
-    USING (true);
+-- Collection Centres: Full access for web portal operations
+DROP POLICY IF EXISTS "Centres select policy" ON public.collection_centres;
+CREATE POLICY "Centres select policy" ON public.collection_centres FOR SELECT USING (true);
 
--- User Profiles: Users can view & update their own profile
-CREATE POLICY "Users can view own profile"
-    ON public.user_profiles FOR SELECT
-    USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Centres insert policy" ON public.collection_centres;
+CREATE POLICY "Centres insert policy" ON public.collection_centres FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Users can update own profile"
-    ON public.user_profiles FOR UPDATE
-    USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Centres update policy" ON public.collection_centres;
+CREATE POLICY "Centres update policy" ON public.collection_centres FOR UPDATE USING (true);
 
--- Pickup Requests: Users can view their own requests, public can lookup by request ID
-CREATE POLICY "Users can view own requests or lookup by ID"
-    ON public.pickup_requests FOR SELECT
-    USING (auth.uid() = user_id OR auth.role() = 'anon');
+DROP POLICY IF EXISTS "Centres delete policy" ON public.collection_centres;
+CREATE POLICY "Centres delete policy" ON public.collection_centres FOR DELETE USING (true);
 
-CREATE POLICY "Users can insert pickup requests"
-    ON public.pickup_requests FOR INSERT
-    WITH CHECK (true);
+-- Pickup Requests: Full access for client booking and status tracking
+DROP POLICY IF EXISTS "Requests select policy" ON public.pickup_requests;
+CREATE POLICY "Requests select policy" ON public.pickup_requests FOR SELECT USING (true);
 
--- Eco Rewards: Users can only see their own rewards
-CREATE POLICY "Users can view own eco rewards"
-    ON public.eco_rewards FOR SELECT
-    USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Requests insert policy" ON public.pickup_requests;
+CREATE POLICY "Requests insert policy" ON public.pickup_requests FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Requests update policy" ON public.pickup_requests;
+CREATE POLICY "Requests update policy" ON public.pickup_requests FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Requests delete policy" ON public.pickup_requests;
+CREATE POLICY "Requests delete policy" ON public.pickup_requests FOR DELETE USING (true);
+
+-- Request Status History policies
+DROP POLICY IF EXISTS "History select policy" ON public.request_status_history;
+CREATE POLICY "History select policy" ON public.request_status_history FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "History insert policy" ON public.request_status_history;
+CREATE POLICY "History insert policy" ON public.request_status_history FOR INSERT WITH CHECK (true);
+
+-- Activity History policies
+DROP POLICY IF EXISTS "Activity select policy" ON public.activity_history;
+CREATE POLICY "Activity select policy" ON public.activity_history FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Activity insert policy" ON public.activity_history;
+CREATE POLICY "Activity insert policy" ON public.activity_history FOR INSERT WITH CHECK (true);
+
+-- User Profiles policies
+DROP POLICY IF EXISTS "Profiles select policy" ON public.user_profiles;
+CREATE POLICY "Profiles select policy" ON public.user_profiles FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Profiles insert policy" ON public.user_profiles;
+CREATE POLICY "Profiles insert policy" ON public.user_profiles FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Profiles update policy" ON public.user_profiles;
+CREATE POLICY "Profiles update policy" ON public.user_profiles FOR UPDATE USING (true);
+
+-- ===============================================================
+-- 9. Real-Time Replication Publication
+-- ===============================================================
+-- Enables Supabase Realtime broadcast for instant multi-tab updates
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    CREATE PUBLICATION supabase_realtime;
+  END IF;
+END $$;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.collection_centres;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.pickup_requests;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.activity_history;
 `;

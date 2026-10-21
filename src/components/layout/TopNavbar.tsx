@@ -29,6 +29,8 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onOpenMobileMenu }) => {
     setIsAuthModalOpen,
     pendingCentres,
     logout,
+    isSupabaseConnected,
+    setIsSupabaseModalOpen,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -68,110 +70,106 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onOpenMobileMenu }) => {
 
       {/* Right: Portal Role Switcher, Quick Actions */}
       <div className="flex items-center gap-2.5">
-        {/* 3-Portal Switcher Dropdown */}
+        {/* User Account & Role Badge (No portal switching while logged in) */}
         <div className="relative">
           <button
             onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
-              activeRole === 'superadmin'
-                ? 'bg-purple-50 border-purple-200 text-purple-900 hover:bg-purple-100'
-                : activeRole === 'admin'
-                ? 'bg-sky-50 border-sky-200 text-sky-900 hover:bg-sky-100'
-                : 'bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100'
-            }`}
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition cursor-pointer shadow-xs"
+            title="User Profile & Account"
           >
-            {activeRole === 'superadmin' ? (
-              <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
-            ) : activeRole === 'admin' ? (
-              <Building2 className="w-3.5 h-3.5 text-sky-700" />
-            ) : (
-              <User className="w-3.5 h-3.5 text-emerald-700" />
-            )}
-            <span className="capitalize">{activeRole} Portal</span>
-            <ChevronDown className="w-3 h-3 opacity-60" />
+            <img
+              src={
+                currentUser?.avatarUrl ||
+                (activeRole === 'superadmin'
+                  ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
+                  : activeRole === 'admin'
+                  ? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
+                  : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80')
+              }
+              alt={currentUser?.name || 'User'}
+              className="w-6 h-6 rounded-full object-cover border border-emerald-500/40 shrink-0"
+            />
+            <div className="hidden sm:flex flex-col text-left">
+              <span className="text-xs font-bold text-slate-800 leading-tight truncate max-w-[110px]">
+                {currentUser?.name || 'Authorized Member'}
+              </span>
+              <span
+                className={`text-[9px] font-bold uppercase tracking-wider leading-tight ${
+                  activeRole === 'superadmin'
+                    ? 'text-purple-700'
+                    : activeRole === 'admin'
+                    ? 'text-sky-700'
+                    : 'text-emerald-700'
+                }`}
+              >
+                {activeRole === 'superadmin' ? 'SuperAdmin' : activeRole === 'admin' ? 'Admin' : 'Citizen'}
+              </span>
+            </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </button>
 
           {roleDropdownOpen && (
-            <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl py-1.5 z-50 text-xs animate-in fade-in zoom-in-95">
-              <div className="px-3.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Select Active Portal
+            <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50 text-xs animate-in fade-in zoom-in-95">
+              <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-3">
+                <img
+                  src={
+                    currentUser?.avatarUrl ||
+                    (activeRole === 'superadmin'
+                      ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
+                      : activeRole === 'admin'
+                      ? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
+                      : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80')
+                  }
+                  alt={currentUser?.name || 'User'}
+                  className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-900 truncate">{currentUser?.name || 'Authorized Member'}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{currentUser?.email || 'user@ecoloop.org'}</p>
+                  <span
+                    className={`inline-block mt-0.5 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                      activeRole === 'superadmin'
+                        ? 'bg-purple-100 text-purple-800'
+                        : activeRole === 'admin'
+                        ? 'bg-sky-100 text-sky-800'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
+                    {activeRole === 'superadmin'
+                      ? 'SuperAdmin Portal'
+                      : activeRole === 'admin'
+                      ? 'Facility Admin Portal'
+                      : 'Citizen Member Portal'}
+                  </span>
+                </div>
               </div>
 
-              {/* Option 1: Citizen/User */}
-              <button
-                onClick={() => {
-                  switchRole('user');
-                  setRoleDropdownOpen(false);
-                }}
-                className={`w-full text-left px-3.5 py-2 hover:bg-emerald-50 transition flex items-center justify-between cursor-pointer ${
-                  activeRole === 'user' ? 'bg-emerald-50/80 font-bold text-emerald-900' : 'text-slate-700'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <User className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Citizen / User Portal</span>
-                </div>
-                {activeRole === 'user' && <span className="text-[10px] text-emerald-700">Active</span>}
-              </button>
-
-              {/* Option 2: Admin */}
-              <button
-                onClick={() => {
-                  switchRole('admin');
-                  setRoleDropdownOpen(false);
-                }}
-                className={`w-full text-left px-3.5 py-2 hover:bg-sky-50 transition flex items-center justify-between cursor-pointer ${
-                  activeRole === 'admin' ? 'bg-sky-50/80 font-bold text-sky-900' : 'text-slate-700'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Building2 className="w-3.5 h-3.5 text-sky-600" />
-                  <span>Facility Admin Portal</span>
-                </div>
-                {activeRole === 'admin' && <span className="text-[10px] text-sky-700">Active</span>}
-              </button>
-
-              {/* Option 3: SuperAdmin */}
-              <button
-                onClick={() => {
-                  switchRole('superadmin');
-                  setRoleDropdownOpen(false);
-                }}
-                className={`w-full text-left px-3.5 py-2 hover:bg-purple-50 transition flex items-center justify-between cursor-pointer ${
-                  activeRole === 'superadmin' ? 'bg-purple-50/80 font-bold text-purple-900' : 'text-slate-700'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                  <span>SuperAdmin Portal</span>
-                </div>
-                {pendingCentres.length > 0 && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950">
-                    {pendingCentres.length}
+              <div className="px-4 py-2 text-[11px] text-slate-500 border-b border-slate-100 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span>Organization</span>
+                  <span className="font-medium text-slate-800 truncate max-w-[130px] text-right">
+                    {currentUser?.organization || 'EcoLoop Network'}
                   </span>
-                )}
-              </button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Session Status</span>
+                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    Authenticated
+                  </span>
+                </div>
+              </div>
 
-              <div className="pt-1 mt-1 border-t border-slate-100 space-y-0.5">
-                <button
-                  onClick={() => {
-                    setRoleDropdownOpen(false);
-                    setIsAuthModalOpen(true);
-                  }}
-                  className="w-full text-left px-3.5 py-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition text-[11px] flex items-center gap-1.5 cursor-pointer font-medium"
-                >
-                  <KeyRound className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Switch Account / Modal...</span>
-                </button>
+              <div className="pt-1 px-2">
                 <button
                   onClick={() => {
                     setRoleDropdownOpen(false);
                     logout();
                   }}
-                  className="w-full text-left px-3.5 py-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition text-[11px] flex items-center gap-1.5 cursor-pointer font-medium"
+                  className="w-full text-left px-3 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition text-xs flex items-center gap-2 cursor-pointer font-bold"
                 >
-                  <LogOut className="w-3.5 h-3.5 text-rose-500" />
-                  <span>Sign Out to Role Selection</span>
+                  <LogOut className="w-4 h-4 text-rose-500" />
+                  <span>Sign Out</span>
                 </button>
               </div>
             </div>
@@ -194,12 +192,12 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onOpenMobileMenu }) => {
         {/* Role-specific CTA Button */}
         {activeRole === 'admin' ? (
           <button
-            onClick={() => setActiveTab('admin_centres')}
+            onClick={() => setActiveTab('admin_my_centre')}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-sky-700 hover:bg-sky-800 text-white text-xs font-bold shadow-sm transition cursor-pointer"
           >
-            <PlusCircle className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Add Centre</span>
-            <span className="sm:hidden">Add</span>
+            <Building2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">My Centre</span>
+            <span className="sm:hidden">Centre</span>
           </button>
         ) : activeRole === 'superadmin' ? (
           <button

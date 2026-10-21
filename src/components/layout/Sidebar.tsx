@@ -17,6 +17,12 @@ import {
   CheckCircle2,
   AlertTriangle,
   LogOut,
+  Calendar,
+  Package,
+  History,
+  BarChart3,
+  Bell,
+  Settings,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -38,8 +44,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     currentUser,
     activeRole,
     userEcoPoints,
-    setIsAuthModalOpen,
     pendingCentres,
+    centres,
+    requests,
     logout,
   } = useApp();
 
@@ -60,11 +67,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'decision_engine', label: 'E-Waste Guide', icon: Compass },
     ];
   } else if (activeRole === 'admin') {
+    // Centre Admin Portal — Strict Facility Management Features
+    // Scope precisely to this authenticated admin's authorised facility
+    const adminCentres = centres.filter(
+      (c) =>
+        c.submittedByAdminId === currentUser?.id ||
+        (currentUser?.organization && c.organization?.toLowerCase() === currentUser.organization.toLowerCase()) ||
+        c.id === (currentUser as any)?.centreId
+    );
+    const activeCentre = adminCentres[0] || (centres.length === 1 ? centres[0] : null);
+
+    const assignedRequests = !activeCentre
+      ? requests
+      : requests.filter((r) => {
+          const matchCity = activeCentre.city && r.city.toLowerCase() === activeCentre.city.toLowerCase();
+          const matchCentreId = (r as any).centreId === activeCentre.id;
+          return matchCity || matchCentreId;
+        });
+
+    // Count genuine relevant records requiring attention
+    const pendingPickups = assignedRequests.filter((r) => r.status === 'submitted').length;
+    const upcomingSchedule = assignedRequests.filter((r) => r.status === 'submitted' || r.status === 'confirmed').length;
+
     navItems = [
-      { id: 'admin_centres', label: 'E-Waste Centres', icon: Building2 },
-      { id: 'admin_pickups', label: 'Pickup Dispatch', icon: Truck },
-      { id: 'collection_centres', label: 'Collection Map', icon: MapPin },
-      { id: 'decision_engine', label: 'Smart E-Waste Guide', icon: Compass },
+      { id: 'admin_my_centre', label: 'My Centre', icon: Building2 },
+      {
+        id: 'admin_pickups',
+        label: 'Pickup Requests',
+        icon: Truck,
+        badge: pendingPickups > 0 ? `${pendingPickups}` : undefined,
+      },
+      {
+        id: 'admin_schedule',
+        label: 'Pickup Schedule',
+        icon: Calendar,
+        badge: upcomingSchedule > 0 ? `${upcomingSchedule}` : undefined,
+      },
+      { id: 'admin_inventory', label: 'E-Waste Inventory', icon: Package },
+      { id: 'admin_history', label: 'Collection History', icon: History },
+      { id: 'admin_analytics', label: 'Reports & Analytics', icon: BarChart3 },
+      { id: 'admin_notifications', label: 'Notifications', icon: Bell },
+      { id: 'admin_settings', label: 'Settings & Support', icon: Settings },
     ];
   } else {
     // Regular citizen / user
@@ -73,7 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'decision_engine', label: 'Smart E-Waste Guide', icon: Compass },
       { id: 'schedule_pickup', label: 'Schedule a Pickup', icon: Truck },
       { id: 'track_request', label: 'Track a Request', icon: Search },
-      { id: 'collection_centres', label: 'Find Collection Centres', icon: MapPin },
+      { id: 'collection_centres', label: 'Collection Map', icon: MapPin },
       { id: 'ecoscore_rewards', label: 'My EcoScore & Badges', icon: Award },
     ];
   }
@@ -127,7 +170,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Brand Header */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-slate-100">
           <div
-            onClick={() => handleNavClick(activeRole === 'superadmin' ? 'superadmin_approvals' : activeRole === 'admin' ? 'admin_centres' : 'dashboard')}
+            onClick={() => handleNavClick(activeRole === 'superadmin' ? 'superadmin_approvals' : activeRole === 'admin' ? 'admin_my_centre' : 'dashboard')}
             className="flex items-center gap-3 cursor-pointer select-none overflow-hidden"
           >
             <div className="w-10 h-10 rounded-2xl bg-emerald-700 flex items-center justify-center text-white shrink-0 shadow-sm shadow-emerald-900/10">
@@ -157,17 +200,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Role Indicator Banner */}
         {!isCollapsed && (
-          <div className="mx-3 mt-3 px-3 py-2 rounded-xl border flex items-center justify-between text-[11px] font-semibold bg-slate-50 border-slate-200">
-            <span className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${roleMeta.dot} animate-pulse`} />
-              <span className="text-slate-800">{roleMeta.title}</span>
-            </span>
-            <button
-              onClick={() => setIsAuthModalOpen(true)}
-              className="text-emerald-700 hover:text-emerald-800 text-[10px] font-bold underline underline-offset-2 cursor-pointer"
-            >
-              Switch Role
-            </button>
+          <div className="mx-3 mt-3 px-3 py-2 rounded-xl border flex items-center gap-2 text-[11px] font-semibold bg-slate-50 border-slate-200">
+            <span className={`w-2 h-2 rounded-full ${roleMeta.dot} shrink-0`} />
+            <span className="text-slate-800 font-bold">{roleMeta.title}</span>
           </div>
         )}
 
@@ -231,15 +266,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
+
+
         {/* Bottom Current Profile Area */}
         <div className="p-3 border-t border-slate-100 bg-slate-50/60">
           <div className="flex items-center justify-between gap-2">
             <div
-              onClick={() => setIsAuthModalOpen(true)}
-              className={`flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100/80 cursor-pointer transition flex-1 min-w-0 ${
+              className={`flex items-center gap-2.5 p-1.5 rounded-xl flex-1 min-w-0 ${
                 isCollapsed ? 'justify-center p-1' : ''
               }`}
-              title="Click to Switch Portal"
+              title="Logged in account"
             >
               <img
                 src={currentUser?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
