@@ -15,7 +15,6 @@ import {
   ShieldCheck,
   KeyRound,
   CheckCircle2,
-  AlertTriangle,
   LogOut,
   Calendar,
   Package,
@@ -23,6 +22,8 @@ import {
   BarChart3,
   Bell,
   Settings,
+  Activity,
+  BarChart2,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -55,16 +56,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   if (activeRole === 'superadmin') {
     navItems = [
+      { id: 'superadmin_overview',      label: 'Overview Dashboard',   icon: LayoutDashboard },
       {
         id: 'superadmin_approvals',
         label: 'Centre Verifications',
         icon: ShieldCheck,
         badge: pendingCentres.length > 0 ? `${pendingCentres.length} new` : undefined,
       },
-      { id: 'superadmin_audit', label: 'Anti-Fraud Shield', icon: AlertTriangle },
-      { id: 'admin_pickups', label: 'Customer Pickups', icon: Truck },
-      { id: 'collection_centres', label: 'Verified Public Map', icon: MapPin },
-      { id: 'decision_engine', label: 'E-Waste Guide', icon: Compass },
+      { id: 'superadmin_journey',       label: 'E-Waste Journey',       icon: Activity },
+      { id: 'superadmin_intelligence',  label: 'Intelligence Center',   icon: BarChart2 },
     ];
   } else if (activeRole === 'admin') {
     // Centre Admin Portal — Strict Facility Management Features

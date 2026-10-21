@@ -50,8 +50,10 @@ export type NavigationTab =
   | 'admin_notifications'
   | 'admin_settings'
   // SuperAdmin Tabs
+  | 'superadmin_overview'
   | 'superadmin_approvals'
-  | 'superadmin_audit';
+  | 'superadmin_journey'
+  | 'superadmin_intelligence';
 
 export interface ToastMessage {
   id: string;
@@ -157,7 +159,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<NavigationTab>(() => {
-    if (currentUser?.role === 'superadmin') return 'superadmin_approvals';
+    if (currentUser?.role === 'superadmin') return 'superadmin_overview';
     if (currentUser?.role === 'admin') return 'admin_my_centre';
     return 'dashboard';
   });
@@ -408,7 +410,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Route to appropriate role portal tab
     if (user.role === 'superadmin') {
-      setActiveTab('superadmin_approvals');
+      setActiveTab('superadmin_overview');
     } else if (user.role === 'admin') {
       setActiveTab('admin_my_centre');
     } else {
@@ -444,7 +446,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUser(account);
 
     if (role === 'superadmin') {
-      setActiveTab('superadmin_approvals');
+      setActiveTab('superadmin_overview');
     } else if (role === 'admin') {
       setActiveTab('admin_my_centre');
     } else {
