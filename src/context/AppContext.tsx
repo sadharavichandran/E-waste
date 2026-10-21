@@ -97,13 +97,11 @@ interface AppContextType {
   deleteCentre: (centreId: string) => Promise<void>;
   deleteRequest: (requestId: string) => Promise<void>;
   clearAllData: () => Promise<void>;
-  // MongoDB Database Status & Sync
-  isSupabaseConfigured: boolean; // Aliased for backward compatibility
-  isSupabaseConnected: boolean; // Aliased for backward compatibility
+  // MongoDB Database Status
   isMongoConnected: boolean;
   isDatabaseLoading: boolean;
   databaseError: string | null;
-  syncToSupabase: () => Promise<{ centresCount: number; requestsCount: number; historyCount: number }>;
+  syncToMongoDB: () => Promise<{ centresCount: number; requestsCount: number; historyCount: number }>;
   reloadFromDatabase: () => Promise<void>;
   // Toasts & Auth Modal
   toasts: ToastMessage[];
@@ -111,8 +109,6 @@ interface AppContextType {
   removeToast: (id: string) => void;
   isAuthModalOpen: boolean;
   setIsAuthModalOpen: (open: boolean) => void;
-  isSupabaseModalOpen: boolean;
-  setIsSupabaseModalOpen: (open: boolean) => void;
   userEcoPoints: number;
 }
 
@@ -203,7 +199,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [preselectedCategory, setPreselectedCategory] = useState<DeviceCategory | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
 
   // Sync session to LocalStorage
   useEffect(() => {
@@ -304,7 +299,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Sync/import to MongoDB manually
-  const syncToSupabase = useCallback(async () => {
+  const syncToMongoDB = useCallback(async () => {
     setIsDatabaseLoading(true);
     try {
       const result = await importDataToMongoDB(centres, requests, activityHistory);
@@ -731,13 +726,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteCentre,
         deleteRequest,
         clearAllData,
-        // MongoDB Status & Sync (Aliased for seamless backward compatibility)
-        isSupabaseConfigured: true,
-        isSupabaseConnected: isMongoConnected,
+        // MongoDB Status & Sync
         isMongoConnected,
         isDatabaseLoading,
         databaseError,
-        syncToSupabase,
+        syncToMongoDB,
         reloadFromDatabase,
         // UI
         toasts,
@@ -745,8 +738,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         removeToast,
         isAuthModalOpen,
         setIsAuthModalOpen,
-        isSupabaseModalOpen,
-        setIsSupabaseModalOpen,
         userEcoPoints,
       }}
     >

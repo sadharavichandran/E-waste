@@ -4,7 +4,6 @@ import { Sidebar } from './components/layout/Sidebar';
 import { TopNavbar } from './components/layout/TopNavbar';
 import { ToastContainer } from './components/layout/ToastContainer';
 import { AuthModal } from './components/layout/AuthModal';
-import { SupabaseModal } from './components/layout/SupabaseModal';
 import { RoleSelectionPage } from './components/auth/RoleSelectionPage';
 import { LoginPage } from './components/auth/LoginPage';
 import { EcoDashboard } from './components/dashboard/EcoDashboard';
@@ -77,9 +76,6 @@ const MainContent: React.FC = () => {
 
       {/* Multi-Portal Authentication & Role Switcher Modal */}
       <AuthModal />
-
-      {/* Database Schema Modal */}
-      <SupabaseModal />
 
       {/* Collapsible Sidebar Navigation */}
       <Sidebar

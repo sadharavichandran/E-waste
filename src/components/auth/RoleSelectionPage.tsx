@@ -160,7 +160,7 @@ export const RoleSelectionPage: React.FC<RoleSelectionPageProps> = ({ onSelectRo
           <span>•</span>
           <span>R2 / e-Stewards Verified</span>
           <span>•</span>
-          <span>Supabase Auth Protected</span>
+          <span>JWT Secure Auth</span>
         </div>
       </footer>
     </div>

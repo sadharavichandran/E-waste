@@ -29,8 +29,6 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onOpenMobileMenu }) => {
     setIsAuthModalOpen,
     pendingCentres,
     logout,
-    isSupabaseConnected,
-    setIsSupabaseModalOpen,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');

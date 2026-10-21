@@ -398,7 +398,6 @@ export const fetchStatusAuditHistory = async (requestId?: string): Promise<Audit
   }
 };
 
-// Aliases for seamless drop-in compatibility across existing admin components
+// Compatibility alias
 export const subscribeToDatabaseChanges = subscribeToMongoRealtime;
-export const testSupabaseConnection = testMongoConnection;
 

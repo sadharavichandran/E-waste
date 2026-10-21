@@ -47,7 +47,7 @@ import {
   AuditLogEntry,
   fetchStatusAuditHistory,
   subscribeToDatabaseChanges,
-  testSupabaseConnection,
+  testMongoConnection,
 } from '../../lib/mongoService';
 import {
   ResponsiveContainer,
@@ -96,12 +96,10 @@ export const AdminPortal: React.FC = () => {
     setActiveTab,
     setTrackedRequestId,
     showToast,
-    isSupabaseConfigured,
-    isSupabaseConnected,
+    isMongoConnected,
     isDatabaseLoading,
     databaseError,
     reloadFromDatabase,
-    setIsSupabaseModalOpen,
   } = useApp();
 
   type AdminSubTab =
@@ -562,7 +560,7 @@ export const AdminPortal: React.FC = () => {
           isCertifiedR2,
           isHazardousBatteryCertified,
         });
-        showToast(`Centre "${centreName.trim()}" updated successfully in Supabase!`, 'success');
+        showToast(`Centre "${centreName.trim()}" updated successfully in MongoDB!`, 'success');
         setIsEditingCentre(false);
       } else {
         const created = registerCentre({
@@ -582,7 +580,7 @@ export const AdminPortal: React.FC = () => {
           isCertifiedR2,
           isHazardousBatteryCertified,
         });
-        showToast(`Centre "${created.name}" registered and stored in Supabase!`, 'success');
+        showToast(`Centre "${created.name}" registered and stored in MongoDB!`, 'success');
         setIsEditingCentre(false);
       }
     } catch (err: any) {
@@ -602,14 +600,14 @@ export const AdminPortal: React.FC = () => {
     }
   };
 
-  // Run live Supabase test in Settings tab
+  // Run live MongoDB test in Settings tab
   const handleTestDatabasePing = async () => {
     setIsPinging(true);
     setPingStatus(null);
     try {
-      const res = await testSupabaseConnection();
+      const res = await testMongoConnection();
       if (res.success) {
-        setPingStatus(`Online: Live PostgreSQL response in ${res.latencyMs}ms (HTTP 200 OK)`);
+        setPingStatus(`Online: Live MongoDB response in ${res.latencyMs}ms (${res.dbName})`);
       } else {
         setPingStatus(`Offline: ${res.error || res.message || 'Connection failed'}`);
       }
@@ -652,7 +650,7 @@ export const AdminPortal: React.FC = () => {
             Facility Operations & E-Waste Management
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 max-w-2xl">
-            Logged in as <strong>{currentUser?.name || 'Administrator'}</strong> ({currentUser?.organization || 'Facility Admin'}). All data is synchronized live with Supabase PostgreSQL.
+            Logged in as <strong>{currentUser?.name || 'Administrator'}</strong> ({currentUser?.organization || 'Facility Admin'}). All data is synchronized live with MongoDB.
           </p>
         </div>
 
@@ -683,27 +681,7 @@ export const AdminPortal: React.FC = () => {
       </div>
 
       {/* 2. Error / Offline Banner */}
-      {!isSupabaseConfigured && (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 flex items-start justify-between gap-3 text-xs">
-          <div className="flex items-start gap-2.5">
-            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">Supabase is not configured yet</p>
-              <p className="text-amber-800 text-[11px] mt-0.5">
-                The Centre Admin Dashboard runs exclusively on real PostgreSQL database records. Please configure your project credentials.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setIsSupabaseModalOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 cursor-pointer shadow-xs"
-          >
-            Configure Supabase
-          </button>
-        </div>
-      )}
-
-      {databaseError && isSupabaseConfigured && (
+      {databaseError && !isMongoConnected && (
         <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 flex items-start justify-between gap-3 text-xs">
           <div className="flex items-start gap-2.5">
             <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
@@ -915,7 +893,7 @@ export const AdminPortal: React.FC = () => {
                       : 'Register New E-Waste Collection Centre'}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Saves directly to Supabase collection_centres table. Position your facility's exact GPS location on the map below.
+                    Saves directly to MongoDB collection_centres. Position your facility's exact GPS location on the map below.
                   </p>
                 </div>
                 {activeCentre && (
@@ -1228,10 +1206,10 @@ export const AdminPortal: React.FC = () => {
                   <Save className="w-4 h-4" />
                   <span>
                     {isSubmitting
-                      ? 'Saving to Supabase...'
+                      ? 'Saving to MongoDB...'
                       : isEditingCentre && activeCentre
                       ? 'Update Centre & Map Coordinates'
-                      : 'Register Centre in Supabase'}
+                      : 'Register Centre in MongoDB'}
                   </span>
                 </button>
               </div>
@@ -1255,7 +1233,7 @@ export const AdminPortal: React.FC = () => {
                 </span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Real customer pickup requests stored in Supabase. Status changes update PostgreSQL and record audit logs.
+                Real customer pickup requests stored in MongoDB. Status changes update records and audit logs.
               </p>
             </div>
 
@@ -1405,7 +1383,7 @@ export const AdminPortal: React.FC = () => {
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
                 {searchQuery || statusFilter !== 'all'
                   ? 'No database records match your active search filter.'
-                  : 'Customer pickup requests booked for your centre will automatically appear here via Supabase Realtime.'}
+                  : 'Customer pickup requests booked for your centre will automatically appear here via Live WebSocket.'}
               </p>
               {(searchQuery || statusFilter !== 'all') && (
                 <button
@@ -1616,7 +1594,7 @@ export const AdminPortal: React.FC = () => {
                 Collection & Processing History ({collectionHistory.length} Completed)
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Archived chain-of-custody records of all collected and recycled electronic items stored in Supabase.
+                Archived chain-of-custody records of all collected and recycled electronic items stored in MongoDB.
               </p>
             </div>
 
@@ -1720,7 +1698,7 @@ export const AdminPortal: React.FC = () => {
               <History className="w-12 h-12 text-slate-300 mx-auto" />
               <h4 className="text-sm font-bold text-slate-800">No collection history recorded yet.</h4>
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Once customer pickups are marked as collected or recycled, complete chain-of-custody transactions are stored in Supabase and displayed here.
+                Once customer pickups are marked as collected or recycled, complete chain-of-custody transactions are stored in MongoDB and displayed here.
               </p>
               <button
                 onClick={() => switchSubTab('pickups')}
@@ -1745,7 +1723,7 @@ export const AdminPortal: React.FC = () => {
                 Real-Time Material Recovery & Processing Analytics
               </h3>
               <p className="text-xs text-slate-500">
-                Generated dynamically from genuine database transactions in Supabase.
+                Generated dynamically from genuine database transactions in MongoDB.
               </p>
             </div>
           </div>
@@ -1865,7 +1843,7 @@ export const AdminPortal: React.FC = () => {
                 Operational Notifications & Audit Logs ({auditLogs.length})
               </h3>
               <p className="text-xs text-slate-500">
-                Every status update and dispatch modification recorded directly in Supabase request_status_history.
+                Every status update and dispatch modification recorded directly in MongoDB audit logs.
               </p>
             </div>
             <button
@@ -1967,27 +1945,27 @@ export const AdminPortal: React.FC = () => {
             </div>
           </div>
 
-          {/* Real-Time Supabase Database Diagnostics Card */}
+          {/* Real-Time MongoDB Database Diagnostics Card */}
           <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
             <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Activity className="w-5 h-5 text-emerald-600" />
-                  Supabase Real-Time Database Diagnostics
+                  MongoDB Real-Time Database Diagnostics
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Live connection health, latency measurement, and PostgreSQL table availability.
+                  Live connection health, latency measurement, and MongoDB collection availability.
                 </p>
               </div>
 
               <span
                 className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider border ${
-                  isSupabaseConnected
+                  isMongoConnected
                     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                     : 'bg-rose-100 text-rose-800 border-rose-300'
                 }`}
               >
-                {isSupabaseConnected ? '● PostgreSQL Live Connected' : '○ Offline / Reconnecting'}
+                {isMongoConnected ? '● MongoDB Live Connected' : '○ Offline / Reconnecting'}
               </span>
             </div>
 
@@ -1996,7 +1974,7 @@ export const AdminPortal: React.FC = () => {
                 <div>
                   <span className="font-bold text-slate-800 block">Ping Latency Test</span>
                   <span className="text-[11px] text-slate-500">
-                    Verify real-time communication speed with the Supabase PostgreSQL cluster.
+                    Verify real-time communication speed with the MongoDB cluster.
                   </span>
                   {pingStatus && (
                     <p className="mt-1 font-mono text-[11px] font-bold text-emerald-700">{pingStatus}</p>
